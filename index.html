@@ -2140,8 +2140,10 @@
 
   function plMatches(){
     return ALL.filter(function(it){
-      var s = state[it.id];
-      if(!s || s.rating !== plRating) return false;
+      if(plRating !== 'all'){
+        var s = state[it.id];
+        if(!s || s.rating !== plRating) return false;
+      }
       if(plActiveYears.size && !plActiveYears.has(it.year)) return false;
       if(plActiveGenreFamilies.size && !it.tags.some(function(t){ return plActiveGenreFamilies.has(genreFamily(t)); })) return false;
       if(plActiveDescriptors.size && !it.descriptors.some(function(d){ return plActiveDescriptors.has(d); })) return false;
@@ -2186,7 +2188,7 @@
   function buildPlaylistChips(){
     var ratingEl = document.getElementById('plRatingChips');
     ratingEl.innerHTML = '';
-    [['keep','Keep'],['meh','Meh'],['toss','Toss']].forEach(function(r){
+    [['keep','Keep'],['meh','Meh'],['toss','Toss'],['all','All (incl. unrated)']].forEach(function(r){
       ratingEl.appendChild(plChip(r[1], plRating === r[0], function(){
         plRating = r[0];
         buildPlaylistChips();
