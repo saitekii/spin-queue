@@ -1,0 +1,2378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spin Queue</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Work+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* dark palette is the default (un-stamped) look; light palette overrides via
+     prefers-color-scheme and via an explicit data-theme stamp, in both directions */
+  :root{
+    --ink:      #14111a;
+    --ink-2:    #221c2c;
+    --ink-3:    #3a3049;
+    --paper:    #f5efe2;
+    --riso:     #8f7dff;
+    --vibe:     #4fd1c5;
+    --keep:     #c3f558;
+    --meh:      #ffd166;
+    --toss:     #ff5c82;
+    --ink-soft: #b8b0a4;
+    --ink-soft2:#8b8377;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --ink:      #f7f2e6;
+      --ink-2:    #ece3cf;
+      --ink-3:    #cdbf9e;
+      --paper:    #211a2b;
+      --riso:     #5b46e6;
+      --vibe:     #0f766e;
+      --keep:     #3c7a12;
+      --meh:      #92600a;
+      --toss:     #c21753;
+      --ink-soft: #55495f;
+      --ink-soft2:#6f6479;
+      color-scheme: light;
+    }
+  }
+  :root[data-theme="light"]{
+    --ink:      #f7f2e6;
+    --ink-2:    #ece3cf;
+    --ink-3:    #cdbf9e;
+    --paper:    #211a2b;
+    --riso:     #5b46e6;
+    --vibe:     #0f766e;
+    --keep:     #3c7a12;
+    --meh:      #92600a;
+    --toss:     #c21753;
+    --ink-soft: #55495f;
+    --ink-soft2:#6f6479;
+    color-scheme: light;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    background:var(--ink);
+    color:var(--paper);
+    font-family:'Work Sans', system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased;
+    background-image:radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--paper) 6%, transparent) 1px, transparent 1px);
+    background-size:22px 22px;
+    transition:background-color .2s ease, color .2s ease;
+  }
+  @media (prefers-reduced-motion:reduce){ *{ transition-duration:.001ms !important; } }
+
+  .app{ max-width:760px; margin:0 auto; padding:26px 18px 60px; }
+
+  header{ position:relative; text-align:center; margin-bottom:18px; }
+  .theme-toggle{
+    position:absolute; top:2px; right:0; background:var(--ink-2); border:1px solid var(--ink-3);
+    color:var(--ink-soft); font-family:'Space Mono', monospace; font-size:10.5px; letter-spacing:.04em;
+    padding:6px 10px; border-radius:999px; cursor:pointer;
+  }
+  .theme-toggle:hover{ border-color:var(--riso); color:var(--paper); }
+  .eyebrow{
+    font-family:'Space Mono', monospace; font-size:11px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--riso);
+  }
+  h1{
+    font-family:'Bebas Neue', sans-serif; font-weight:400;
+    font-size:clamp(38px, 9vw, 50px); line-height:.95; margin:2px 0 6px; text-wrap:balance;
+  }
+  .sub{ font-size:13px; color:var(--ink-soft); max-width:48ch; margin:0 auto; line-height:1.5; }
+
+  .toolbar{
+    position:sticky; top:0; z-index:6; background:var(--ink);
+    padding:14px 0 12px; margin-bottom:6px; border-bottom:1px solid var(--ink-2);
+  }
+  .search-row{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+  .search-row input[type="text"]{
+    flex:1 1 160px; background:var(--ink-2); border:1px solid var(--ink-3); color:var(--paper);
+    font-family:'Work Sans'; font-size:14px; padding:9px 12px; border-radius:8px;
+  }
+  .search-row input[type="text"]::placeholder{ color:var(--ink-soft2); }
+  .search-row input[type="text"]:focus{ outline:2px solid var(--riso); outline-offset:-1px; }
+  .icon-btn{
+    flex:none; background:var(--ink-2); border:1px solid var(--ink-3); color:var(--paper);
+    font-family:'Space Mono'; font-size:12px; padding:9px 12px; border-radius:8px; cursor:pointer;
+    white-space:nowrap;
+  }
+  .icon-btn:hover{ border-color:var(--riso); }
+
+  .chip-row{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  #filterPanel{ max-height:min(46vh, 360px); overflow-y:auto; padding-right:4px; }
+  .filter-note{
+    font-family:'Space Mono', monospace; font-size:10px; color:var(--ink-soft2);
+    margin:-4px 0 10px; line-height:1.4;
+  }
+
+  .filters-toggle{
+    width:100%; display:flex; align-items:center; justify-content:center; gap:7px;
+    background:var(--ink-2); border:1px solid var(--ink-3); color:var(--paper);
+    font-family:'Space Mono', monospace; font-size:12px; padding:9px 12px; border-radius:8px;
+    cursor:pointer; margin-bottom:10px;
+  }
+  .filters-toggle:hover{ border-color:var(--riso); }
+  .filters-toggle .badge{
+    background:var(--riso); color:var(--ink); border-radius:999px; padding:1px 7px;
+    font-size:10.5px; font-weight:700;
+  }
+  .filters-toggle .chev{ color:var(--ink-soft); transition:transform .2s ease; font-size:10px; }
+  .filters-toggle.open .chev{ transform:rotate(180deg); }
+  #filterPanel{ padding-top:2px; }
+  .chip{
+    font-family:'Space Mono', monospace; font-size:11px; padding:5px 11px; border-radius:999px;
+    background:var(--ink-2); border:1px solid var(--ink-3); color:var(--ink-soft); cursor:pointer;
+  }
+  .chip.on{ color:var(--paper); border-color:var(--riso); background:color-mix(in srgb, var(--riso) 15%, transparent); }
+  .family-label{
+    flex-basis:100%; font-family:'Space Mono', monospace; font-size:10px; letter-spacing:.09em;
+    text-transform:uppercase; color:var(--riso); opacity:.8; margin:4px 0 -2px;
+  }
+
+  /* tier chips echo the same confidence colors used for tier-head headings below */
+  .chip[data-tier="Confirmed favorites"]{ color:var(--keep); border-color:color-mix(in srgb, var(--keep) 45%, var(--ink-3)); }
+  .chip[data-tier="Confirmed favorites"].on{ color:var(--paper); border-color:var(--keep); background:color-mix(in srgb, var(--keep) 18%, transparent); }
+  .chip[data-tier="Best new discoveries"]{ color:var(--riso); border-color:color-mix(in srgb, var(--riso) 45%, var(--ink-3)); }
+  .chip[data-tier="Best new discoveries"].on{ color:var(--paper); border-color:var(--riso); background:color-mix(in srgb, var(--riso) 18%, transparent); }
+  .chip[data-tier="Worth a shot"]{ color:var(--meh); border-color:color-mix(in srgb, var(--meh) 45%, var(--ink-3)); }
+  .chip[data-tier="Worth a shot"].on{ color:var(--paper); border-color:var(--meh); background:color-mix(in srgb, var(--meh) 18%, transparent); }
+
+  /* status chips echo the Keep/Meh/Toss rating colors used throughout */
+  .chip[data-status="keep"]{ color:var(--keep); border-color:color-mix(in srgb, var(--keep) 45%, var(--ink-3)); }
+  .chip[data-status="keep"].on{ color:var(--paper); border-color:var(--keep); background:color-mix(in srgb, var(--keep) 18%, transparent); }
+  .chip[data-status="meh"]{ color:var(--meh); border-color:color-mix(in srgb, var(--meh) 45%, var(--ink-3)); }
+  .chip[data-status="meh"].on{ color:var(--paper); border-color:var(--meh); background:color-mix(in srgb, var(--meh) 18%, transparent); }
+  .chip[data-status="toss"]{ color:var(--toss); border-color:color-mix(in srgb, var(--toss) 45%, var(--ink-3)); }
+  .chip[data-status="toss"].on{ color:var(--paper); border-color:var(--toss); background:color-mix(in srgb, var(--toss) 18%, transparent); }
+
+  /* descriptor chips get their own accent (teal) so they read as a different filter axis than genre (violet) */
+  #genreChips .chip{ color:var(--riso); border-color:color-mix(in srgb, var(--riso) 40%, var(--ink-3)); }
+  #genreChips .chip.on{ color:var(--paper); border-color:var(--riso); background:color-mix(in srgb, var(--riso) 18%, transparent); }
+  #descriptorChips .chip{ color:var(--vibe); border-color:color-mix(in srgb, var(--vibe) 40%, var(--ink-3)); }
+  #descriptorChips .chip.on{ color:var(--paper); border-color:var(--vibe); background:color-mix(in srgb, var(--vibe) 18%, transparent); }
+
+  .progress-row{
+    display:flex; justify-content:space-between; align-items:baseline;
+    font-family:'Space Mono', monospace; font-size:11.5px; color:var(--ink-soft); margin-bottom:6px;
+  }
+  .progress-row b{ color:var(--paper); font-variant-numeric:tabular-nums; }
+  .bar{ height:5px; border-radius:4px; background:var(--ink-2); overflow:hidden; margin-bottom:10px; }
+  .bar > i{ display:block; height:100%; width:0%; background:var(--riso); transition:width .3s ease; }
+
+  .tallies{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+  .tally{
+    font-family:'Space Mono', monospace; font-size:11px; padding:4px 10px; border-radius:999px;
+    display:flex; align-items:center; gap:6px; border:1px solid var(--ink-2); background:var(--ink-2);
+  }
+  .tally .dot{ width:7px; height:7px; border-radius:50%; }
+  .tally.keep .dot{ background:var(--keep); } .tally.meh .dot{ background:var(--meh); } .tally.toss .dot{ background:var(--toss); }
+  .tally b{ color:var(--paper); font-variant-numeric:tabular-nums; }
+
+  #empty{ text-align:center; color:var(--ink-soft); font-size:13px; padding:40px 0; }
+
+  section.tier{ margin-top:24px; border-left:3px solid var(--ink-3); padding-left:11px; }
+  .tier-head{
+    display:flex; align-items:baseline; gap:10px; margin-bottom:8px;
+    border-bottom:1px solid var(--ink-2); padding-bottom:7px;
+  }
+  .tier-head h2{ font-family:'Bebas Neue', sans-serif; font-weight:400; font-size:20px; letter-spacing:.02em; margin:0; }
+  .tier-head span{ font-family:'Space Mono', monospace; font-size:10.5px; color:var(--ink-soft2); }
+  section.tier[data-tier="Confirmed favorites"]{ border-left-color:var(--keep); }
+  section.tier[data-tier="Confirmed favorites"] .tier-head h2{ color:var(--keep); }
+  section.tier[data-tier="Best new discoveries"]{ border-left-color:var(--riso); }
+  section.tier[data-tier="Best new discoveries"] .tier-head h2{ color:var(--riso); }
+  section.tier[data-tier="Worth a shot"]{ border-left-color:var(--meh); }
+  section.tier[data-tier="Worth a shot"] .tier-head h2{ color:var(--meh); }
+
+  .item{ display:flex; gap:11px; padding:11px 0; border-bottom:1px solid var(--ink-2); scroll-margin-top:170px; }
+  .item.rated .meta .name{ color:var(--ink-soft); }
+  .item.rated .meta .album{ text-decoration:line-through; text-decoration-color:var(--ink-soft2); }
+  .item.flash{ animation:flash 1.4s ease; }
+  @keyframes flash{ 0%,100%{ background:transparent; } 25%{ background:color-mix(in srgb, var(--riso) 18%, transparent); } }
+
+  .meta{ flex:1; min-width:0; }
+  .meta .top-row{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+  .meta .album{ font-weight:600; font-size:14px; }
+  .meta .yr{ font-family:'Space Mono'; font-size:10px; color:var(--ink-soft2); border:1px solid var(--ink-2); padding:1px 6px; border-radius:999px; }
+  .meta .name{ font-size:12.5px; color:var(--ink-soft); margin-top:1px; }
+  .meta .tags{ margin-top:4px; display:flex; flex-wrap:wrap; gap:5px; }
+  .tag{ font-family:'Space Mono', monospace; font-size:9.5px; color:var(--riso); border:1px solid color-mix(in srgb, var(--riso) 32%, var(--ink-2)); padding:1px 7px; border-radius:999px; }
+  .tag-desc{ color:var(--vibe); border-color:color-mix(in srgb, var(--vibe) 40%, transparent); font-style:italic; }
+  .meta .note{ margin-top:4px; font-size:11.5px; color:var(--ink-soft2); font-style:italic; }
+  .meta .actions{ margin-top:7px; display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
+  .search-link{
+    font-family:'Space Mono'; font-size:10.5px; color:var(--riso); text-decoration:none;
+    border:1px solid var(--ink-3); padding:3px 9px; border-radius:999px;
+  }
+  .search-link:hover{ border-color:var(--riso); }
+  .rate-btn{
+    font-family:'Work Sans'; font-size:10.5px; padding:3px 9px; border-radius:999px; cursor:pointer;
+    background:var(--ink-2); border:1px solid transparent; color:var(--ink-soft);
+  }
+  .rate-btn[data-r="toss"]{ color:var(--toss); } .rate-btn[data-r="meh"]{ color:var(--meh); } .rate-btn[data-r="keep"]{ color:var(--keep); }
+  .rate-btn.sel[data-r="toss"]{ border-color:var(--toss); background:color-mix(in srgb, var(--toss) 15%, transparent); }
+  .rate-btn.sel[data-r="meh"]{ border-color:var(--meh); background:color-mix(in srgb, var(--meh) 15%, transparent); }
+  .rate-btn.sel[data-r="keep"]{ border-color:var(--keep); background:color-mix(in srgb, var(--keep) 15%, transparent); }
+
+  footer{ text-align:center; font-size:10.5px; color:var(--ink-soft2); margin-top:30px; }
+  .toast{
+    position:fixed; bottom:18px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:var(--riso); color:var(--ink); font-family:'Work Sans'; font-weight:600; font-size:13px;
+    padding:10px 18px; border-radius:999px; opacity:0; transition:opacity .25s ease, transform .25s ease;
+    pointer-events:none; z-index:20;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  .view-toggle{ display:flex; gap:6px; margin-bottom:10px; }
+  .view-toggle button{
+    font-family:'Space Mono'; font-size:11.5px; padding:6px 14px; border-radius:999px; cursor:pointer;
+    background:var(--ink-2); border:1px solid var(--ink-3); color:var(--ink-soft);
+  }
+  .view-toggle button.on{ color:var(--paper); border-color:var(--riso); background:color-mix(in srgb, var(--riso) 15%, transparent); }
+
+  .graph-hint{ font-size:11.5px; color:var(--ink-soft2); text-align:center; margin:14px 0 8px; }
+
+  .stats-sub{ font-family:'Space Mono', monospace; font-size:11.5px; color:var(--ink-soft2); text-align:center; margin:4px 0 22px; }
+  .stats-empty{ text-align:center; color:var(--ink-soft); font-size:13px; padding:60px 20px; line-height:1.6; }
+  .stats-section{ margin-bottom:28px; }
+  .stats-section h2{
+    font-family:'Bebas Neue', sans-serif; font-weight:400; font-size:19px; letter-spacing:.02em;
+    margin:0 0 12px; border-bottom:1px solid var(--ink-2); padding-bottom:7px; color:var(--paper);
+  }
+  .stat-bars{ display:flex; flex-direction:column; gap:8px; }
+  .stat-bar-row{ display:grid; grid-template-columns:118px 1fr 40px; align-items:center; gap:10px; }
+  .stat-label{
+    font-family:'Space Mono', monospace; font-size:11px; color:var(--ink-soft); white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis;
+  }
+  .stat-bar-track{ height:10px; background:var(--ink-2); border-radius:5px; overflow:hidden; }
+  .stat-bar-fill{ height:100%; border-radius:5px; transition:width .4s ease; }
+  .stat-count{
+    font-family:'Space Mono', monospace; font-size:10.5px; color:var(--ink-soft2);
+    text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap;
+  }
+  .stats-none{ font-size:12px; color:var(--ink-soft2); font-style:italic; margin:0; }
+
+  .redirect-uri-row{ display:flex; gap:8px; align-items:center; margin:8px 0 4px; }
+  .redirect-uri-row code{
+    flex:1; min-width:0; overflow-x:auto; white-space:nowrap; background:var(--ink-2);
+    border:1px solid var(--ink-3); border-radius:8px; padding:8px 10px; font-family:'Space Mono', monospace;
+    font-size:11px; color:var(--riso);
+  }
+  #plLog{
+    margin-top:14px; background:var(--ink-2); border:1px solid var(--ink-3); border-radius:10px;
+    padding:12px 14px; font-family:'Space Mono', monospace; font-size:11px; line-height:1.7;
+    color:var(--ink-soft); max-height:280px; overflow-y:auto; white-space:pre-wrap;
+  }
+  #plLog .pl-ok{ color:var(--keep); }
+  #plLog .pl-bad{ color:var(--toss); }
+  #plLog .pl-link{ color:var(--riso); }
+  .pl-field{ margin-bottom:16px; }
+  .pl-field-label{
+    font-family:'Space Mono', monospace; font-size:11px; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--ink-soft2); margin-bottom:7px;
+  }
+  .pl-field-hint{ text-transform:none; letter-spacing:0; opacity:.8; }
+  .pl-public-toggle{
+    display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--ink-soft);
+    margin:10px 0 16px; cursor:pointer;
+  }
+  #plMatchCount{ margin:4px 0 10px; }
+  #plMatchList{
+    margin-bottom:16px; background:var(--ink-2); border:1px solid var(--ink-3); border-radius:10px;
+    padding:10px 14px; font-family:'Space Mono', monospace; font-size:11px; line-height:1.9;
+    color:var(--ink-soft); max-height:220px; overflow-y:auto;
+  }
+  #plMatchList .pl-more{ color:var(--ink-soft2); font-style:italic; }
+  #graphStage{
+    position:relative; width:100%; height:62vh; min-height:440px;
+    background:var(--ink-2); border:1px solid var(--ink-3); border-radius:10px; overflow:hidden;
+  }
+  #graphSvg{ width:100%; height:100%; cursor:grab; display:block; }
+  #graphSvg:active{ cursor:grabbing; }
+  .g-link{ stroke:color-mix(in srgb, var(--riso) 35%, transparent); stroke-width:1px; }
+  .g-node{ cursor:pointer; }
+  .g-node-hub circle{ fill:var(--ink); stroke:var(--riso); stroke-width:1.6px; }
+  .g-node-hub text{ fill:var(--riso); font-family:'Space Mono'; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; pointer-events:none; }
+  .g-node-hub.hub-descriptor circle{ stroke:var(--vibe); }
+  .g-node-hub.hub-descriptor text{ fill:var(--vibe); }
+  .g-node-anchor circle{ fill:var(--ink); stroke:var(--keep); stroke-width:2.5px; }
+  .g-node-anchor text{ fill:var(--paper); font-family:'Work Sans'; font-size:11.5px; font-weight:600; pointer-events:none; }
+  .g-node-album circle{ fill:var(--paper); opacity:.9; stroke:none; }
+  .g-node-album text{ fill:var(--ink-soft); font-family:'Work Sans'; font-size:10.5px; pointer-events:none; }
+  .g-node.rated-keep circle{ stroke:var(--keep); stroke-width:2.5px; }
+  .g-node.rated-meh circle{ stroke:var(--meh); stroke-width:2.5px; }
+  .g-node.rated-toss circle{ stroke:var(--toss); stroke-width:2.5px; }
+  .legend{ display:flex; flex-wrap:wrap; gap:12px; justify-content:center; margin-top:10px; font-family:'Space Mono'; font-size:10px; color:var(--ink-soft); }
+  .legend span{ display:inline-flex; align-items:center; gap:5px; }
+  .legend i{ width:9px; height:9px; border-radius:50%; display:inline-block; box-sizing:border-box; }
+  #graphDetail{
+    margin-top:12px; background:var(--ink-2); border:1px solid var(--ink-3); border-radius:10px;
+    padding:14px 16px; display:none;
+  }
+  #graphDetail.show{ display:block; }
+  #graphDetail .album{ font-weight:600; font-size:15px; }
+  #graphDetail .name{ font-size:12.5px; color:var(--ink-soft); margin-top:1px; }
+  #graphDetail .tags{ margin-top:6px; display:flex; flex-wrap:wrap; gap:5px; }
+  #graphDetail .note{ margin-top:6px; font-size:11.5px; color:var(--ink-soft2); font-style:italic; }
+  #graphDetail .actions{ margin-top:10px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+
+  [hidden]{ display:none !important; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle light / dark mode">&#9788; Light</button>
+    <div class="eyebrow">Discovery queue &middot; 2020&ndash;2026 RYM screenings</div>
+    <h1>Spin Queue</h1>
+    <p class="sub">Every album screened against your taste profile, all years in one place. Search, filter, track what you've heard, rate it, and pull your Keeps back out when you're ready.</p>
+  </header>
+
+  <div class="toolbar">
+    <div class="search-row">
+      <input type="text" id="search" placeholder="Search artist, album, genre&hellip;">
+      <button class="icon-btn" id="surpriseBtn">🎲 Surprise me</button>
+      <button class="icon-btn" id="copyBtn">Copy Keeps</button>
+      <button class="icon-btn" id="spotgenBtn">Copy for Spotgen</button>
+    </div>
+    <div class="view-toggle" id="viewToggle">
+      <button data-view="list" class="on">List</button>
+      <button data-view="graph">Graph</button>
+      <button data-view="stats">Stats</button>
+      <button data-view="playlists">Playlists</button>
+    </div>
+    <button class="filters-toggle" id="filtersToggle">
+      <span>Filters</span><span class="badge" id="filterCount" hidden></span><span class="chev">&#9662;</span>
+    </button>
+    <div id="filterPanel" hidden>
+      <div class="chip-row" id="yearChips"></div>
+      <div class="chip-row" id="tierChips"></div>
+      <div class="chip-row" id="statusChips"></div>
+      <div class="chip-row" id="genreChips"></div>
+      <div class="chip-row" id="descriptorChips"></div>
+      <p class="filter-note">Descriptors only cover Confirmed favorites &amp; Best discoveries &mdash; filtering by one hides Worth a Shot items</p>
+    </div>
+    <div class="progress-row">
+      <span>RATED (shown)</span>
+      <span><b id="progNum">0</b> / <span id="progTotal">0</span> &nbsp;&middot;&nbsp; <b id="progAllNum">0</b>/<span id="progAllTotal">0</span> total</span>
+    </div>
+    <div class="bar"><i id="progFill"></i></div>
+    <div class="tallies">
+      <span class="tally keep"><span class="dot"></span>Keep <b id="cKeep">0</b></span>
+      <span class="tally meh"><span class="dot"></span>Meh <b id="cMeh">0</b></span>
+      <span class="tally toss"><span class="dot"></span>Toss <b id="cToss">0</b></span>
+    </div>
+  </div>
+
+  <div id="empty" hidden>Nothing matches. Try clearing filters.</div>
+  <div id="tiers"></div>
+
+  <div id="graphView" hidden>
+    <div class="view-toggle" id="hubToggle" style="justify-content:center">
+      <button data-hub="genre" class="on">Genre hubs</button>
+      <button data-hub="descriptor">Descriptor hubs</button>
+    </div>
+    <p class="graph-hint">Click a hub to reveal its albums &middot; click an album for details &middot; click empty space to collapse &middot; drag to rearrange</p>
+    <p class="graph-hint" style="margin-top:-4px">Descriptor data only covers Confirmed favorites &amp; Best discoveries so far &mdash; Worth a Shot items won't connect in Descriptor mode yet</p>
+    <div id="graphStage"><svg id="graphSvg"></svg></div>
+    <div class="legend">
+      <span><i style="border:1.6px solid var(--riso)"></i>Genre hub</span>
+      <span><i style="border:2px solid var(--keep)"></i>Confirmed favorite</span>
+      <span><i style="background:var(--paper)"></i>Album</span>
+      <span><i style="border:2px solid var(--keep)"></i>Rated Keep</span>
+      <span><i style="border:2px solid var(--meh)"></i>Rated Meh</span>
+      <span><i style="border:2px solid var(--toss)"></i>Rated Toss</span>
+    </div>
+    <div id="graphDetail"></div>
+  </div>
+
+  <div id="statsView" hidden>
+    <p class="stats-sub" id="statsSub"></p>
+    <div id="statsEmpty" class="stats-empty" hidden>Rate a few albums &mdash; Keep or Toss &mdash; and your taste stats will start building up here.</div>
+    <div id="statsContent">
+      <div class="stats-section">
+        <h2>Keep rate by tier</h2>
+        <div id="statsTiers" class="stat-bars"></div>
+      </div>
+      <div class="stats-section">
+        <h2>Genre families you keep</h2>
+        <div id="statsGenreFamilies" class="stat-bars"></div>
+      </div>
+      <div class="stats-section">
+        <h2>Descriptors you keep</h2>
+        <div id="statsDescriptors" class="stat-bars"></div>
+      </div>
+      <div class="stats-section">
+        <h2>Genre families you toss</h2>
+        <div id="statsTossed" class="stat-bars"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="playlistsView" hidden>
+    <div id="spotifyDisconnected">
+      <p class="stats-sub">Build a Spotify playlist straight from your ratings &mdash; filter by year, genre, or descriptor, and every matching album's full tracklist gets added in one go.</p>
+      <p class="stats-sub">One-time setup: add this Redirect URI to your app at <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener noreferrer">developer.spotify.com/dashboard</a> (your app &rarr; Settings &rarr; Redirect URIs):</p>
+      <div class="redirect-uri-row">
+        <code id="redirectUriDisplay"></code>
+        <button class="icon-btn" id="copyRedirectBtn">Copy</button>
+      </div>
+      <button class="icon-btn" id="spotifyConnectBtn" style="margin-top:14px;">Connect Spotify</button>
+    </div>
+    <div id="spotifyConnected" hidden>
+      <p class="stats-sub">Connected as <b id="spotifyUserName"></b> &middot; <a href="#" id="spotifyDisconnectBtn">disconnect</a></p>
+
+      <div class="pl-field">
+        <div class="pl-field-label">Rating</div>
+        <div class="chip-row" id="plRatingChips"></div>
+      </div>
+      <div class="pl-field">
+        <div class="pl-field-label">Years <span class="pl-field-hint">(none selected = all)</span></div>
+        <div class="chip-row" id="plYearChips"></div>
+      </div>
+      <div class="pl-field">
+        <div class="pl-field-label">Genre families <span class="pl-field-hint">(none selected = all)</span></div>
+        <div class="chip-row" id="plGenreChips"></div>
+      </div>
+      <div class="pl-field">
+        <div class="pl-field-label">Descriptors <span class="pl-field-hint">(none selected = all)</span></div>
+        <div class="chip-row" id="plDescChips"></div>
+      </div>
+
+      <div class="search-row" style="margin-top:6px;">
+        <input type="text" id="plNameInput" placeholder="Playlist name (auto-generated if blank)">
+      </div>
+      <label class="pl-public-toggle"><input type="checkbox" id="plPublicToggle"> Make playlist public</label>
+
+      <p class="stats-sub" id="plMatchCount">Matches 0 albums</p>
+      <div id="plMatchList"></div>
+
+      <button class="icon-btn" id="plCreateBtn">Create Playlist</button>
+
+      <div id="plLog" hidden></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <footer>Tap Toss / Meh / Keep to rate an album &mdash; tap the same one again to undo. Saves automatically.</footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script>
+(function(){
+  // [artist, album, tags, note]
+  var RAW = {
+    2026: {
+      "Confirmed favorites": [
+        ["Bring Me the Horizon","Count Your Blessings: Repented",["Deathcore","Melodic Death Metal"],"",["punchy","harsh vocals","energetic","vulgar","blast beats","hateful","aggressive","heavy"]],
+        ["ERRA","Silence Outlives the Earth",["Djent","Metalcore"],"",["melodic","heavy","existential","lush","passionate","technical","energetic","anthemic"]],
+        ["Enter Shikari","Lose Your Self",["Electronicore","Post-Hardcore"],"",["conscious","political","space","energetic","philosophical","melodic","rhythmic","pessimistic"]],
+        ["Sleeping With Sirens","An Ending in Itself",["Emo-Pop","Post-Hardcore"],"",["melodic","passionate","energetic","anxious","spiritual","bouncy","rhythmic"]],
+        ["Thundercat","Distracted",["Neo-Psychedelia","Jazz Fusion"],"",["smooth","technical","mellow","psychedelic","soothing","warm","melodic","eclectic"]],
+        ["Cheekface","Podium",["Geek Rock","Indie Rock"],"",["talk-singing","political","humorous","playful","sarcastic","rhythmic","satirical","dense"]],
+        ["Charli xcx","Music, Fashion, Film",["Indietronica","Slacker Rock"],"style pivot",["deadpan","fame","talk-singing","existential","introspective","insecure","cynical","anxious"]],
+        ["Guided by Voices","Crawlspace of the Pantheon",["Indie Rock","Power Pop"],"",["melodic","triumphant"]],
+        ["Plini","An Unnameable Desire",["Progressive Metal","Jazz Fusion","Djent"],"fuses your two core genres",["technical","progressive","instrumental","melodic","futuristic","dense","complex","uplifting"]],
+        ["death's dynamic shroud","Mobile Suit Gym Rat",["EDM","Utopian Virtual"],"style pivot",["energetic","maximalist","rhythmic","dense","sampling","futuristic","surreal","vocal chops"]],
+        ["Sugar Plant","One Dream, One Star",["Dream Pop","Ambient Pop"],"",["sentimental","nocturnal","mellow","ethereal","lush"]]
+      ],
+      "Best new discoveries": [
+        ["Loathe","A Stranger to You",["Metalcore","Shoegaze","Dream Pop"],"metalcore + shoegaze + dream pop",["eclectic","atmospheric","melancholic","chugging","melodic","punchy","bittersweet","fuzzy"]],
+        ["Tigran Hamasyan","Manifeste",["Jazz Fusion","Djent"],"hits both core pillars",["uncommon time signatures","instrumental","dense","complex","progressive","heavy","technical","eclectic"]],
+        ["Blarf","Film Scores for Films That Don't Exist",["Cinematic Classical","Orchestral"],"Golden-Age-Hollywood match",["instrumental","orchestral","epic","progressive","atmospheric","dense","avant-garde","complex"]],
+        ["Trooper Salute","友達がいました",["Indie Rock","Shimokita-kei"],"",["lush","passionate","eclectic","bittersweet","melodic","progressive","ethereal","playful"]],
+        ["長谷川白紙","素直な気持ちアルバム",["Glitch Pop","Avant-Garde Jazz"],"",["atmospheric"]],
+        ["ヨルシカ","二人称",["Jazz Pop","J-Pop"],"",["atmospheric"]],
+        ["KIRINJI","Town Beat",["Sophisti-Pop","Neo-City Pop"],"",["calm","mellow","urban","beach","summer","love","lush","bright"]],
+        ["t e l e p a t h テレパシー能力者","輝く星にのせて愛を",["Slushwave"],"half of 2814",["repetitive","atmospheric","lush","nocturnal","sampling","love","dreams","nostalgia"]],
+        ["Kamikaze Prom Night","Holy Diamond Blue",["Dream Pop","City Pop"],"",["ethereal","psychedelic","summer","tropical","atmospheric","lush","calm","aquatic"]],
+        ["Namitape","Hetoheto Room",["Synthwave","Electropop"],"",["dancing","ethereal","lush","rhythmic","nostalgia","melodic","bittersweet","pastiche"]],
+        ["Genghis Tron","Signal Fire",["Industrial Metal","Mathcore"],"",["cyberpunk","lush","dense","dystopian","uncommon time signatures","angry","futuristic","dark"]],
+        ["Fire-Toolz","Lavender Networks",["Avant-Garde Metal","Utopian Virtual"],"",["surreal","heavy","dense","avant-garde","complex","eclectic","playful","futuristic"]]
+      ],
+      "Worth a shot": [
+        ["Periphery","A Pale White Dot",["Djent","Metalcore"],"",["heavy","rhythmic","lonely","anthemic","introspective","death","aggressive","melodic"]],
+        ["Static Dress","Injury Episode",["Mall Screamo","Metalcore"],"",["chaotic","dark","heavy","energetic","melodic","fuzzy","angry","noisy"]],
+        ["Boundaries","Yearning: The Unbeautiful After",["Metalcore"],"",["chugging","harsh vocals","heavy","melodic","angry","bassy","chaotic","piercing"]],
+        ["August Burns Red","Season of Surrender",["Melodic Metalcore"],"",["harsh vocals","technical","dark","punchy","heavy","angry","chugging","aggressive"]],
+        ["Darko","Oni 2",["Metalcore","Electronicore"],"",["ethereal","manic","eclectic","futuristic","energetic","dense","rhythmic","atmospheric"]],
+        ["Ok Goodnight","Stop / Go",["Progressive Metal","Djent"],"",["complex","uncommon time signatures","progressive","eclectic","lush","passionate","angular","atmospheric"]],
+        ["Ennaria","Manifesto",["Hyperpop","Electronicore"],"",["futuristic","energetic","noisy","rhythmic","buzzy","eclectic","dense","harsh vocals"]],
+        ["Karnivool","In Verses",["Alternative Metal","Progressive Metal"],"",["atmospheric","passionate","progressive","melodic","introspective","heavy","escapism","dark"]],
+        ["Good Tiger","The Most Negative Day of the Year",["Swancore","Progressive Metal"],"",["rhythmic","complex","melodic","technical","energetic","melancholic","eclectic","ethereal"]],
+        ["Protest the Hero","Within",["Progressive Metal"],"",["technical","uncommon time signatures","energetic","progressive","complex","political","philosophical","introspective"]],
+        ["The Hirsch Effekt","Der Brauch",["Progressive Metal","Math Rock"],"",["complex","uncommon time signatures","heavy","progressive","technical","melodic","existential","mysterious"]],
+        ["Pat Metheny","Side-Eye III+",["Jazz Fusion"],"",["instrumental","progressive","lush","bright","improvisation","complex","smooth","technical"]],
+        ["Squarepusher","Kammerkonzert",["Jazz Fusion","Modern Classical"],"",["avant-garde","complex","technical","dissonant","angular","progressive","instrumental","uncommon time signatures"]],
+        ["Soft Machine","Thirteen",["Jazz-Rock"],"",["instrumental","improvisation","technical","progressive","atmospheric","eclectic","avant-garde"]],
+        ["Papangu","Celestial",["Jazz-Rock","Zeuhl"],"",["warm","technical","avant-garde","harsh vocals","psychedelic","uncommon time signatures","progressive","energetic"]],
+        ["Sightseeing Crew","Muffled Ears, the World Sounds Bad Quality",["Jazz-Rock","Post-Rock"],"",["lush","atmospheric","ethereal","psychedelic","melancholic","surreal","calm","warm"]],
+        ["Bruno Pernadas","unlikely, maybe",["Jazz Fusion","Psychedelic Pop"],"",["lush","progressive","eclectic","psychedelic","space","warm","rhythmic","mellow"]],
+        ["坂本慎太郎","ヤッホー",["Neo-Psychedelia"],"",["atmospheric"]],
+        ["Robyn","Sexistential",["Synthpop"],"",["sexual","existential","futuristic","twinkling","bright","love","optimistic","quirky"]],
+        ["Kim Petras","Detour",["Electropop","Hyperpop"],"",["energetic","party","bouncy","buzzy","dense","punchy","boastful","entertainment industry"]],
+        ["tsubi club","Trinket",["Hyperpop"],"",["energetic","playful","maximalist","quirky","dense","eclectic","bright","fuzzy"]],
+        ["hemlocke springs","The Apple Tree Under the Sea",["Synthpop"],"",["quirky","theatrical","melodic","playful","rhythmic","bouncy","passionate","Biblical"]],
+        ["Genesis Owusu","Redstar Wu & the Worldwide Scourge",["Post-Punk Revival","Hip Hop"],"",["eclectic","conscious","political","energetic","punchy","rebellious","protest","playful"]],
+        ["Floating Points","Mere Mortals",["Progressive Electronic","Orchestral"],"",["polyrhythm","orchestral","avant-garde","suspenseful","mythology","instrumental","hypnotic","rhythmic"]],
+        ["Broken Social Scene","Remember the Humans",["Indie Rock"],"",["dense","cryptic","ethereal","melodic","atmospheric","lush","progressive","peaceful"]],
+        ["deary","Birding",["Shoegaze","Dream Pop"],"",["ethereal","longing","hazy","lush","twinkling","bright","peaceful","surreal"]],
+        ["Nothing","A Short History of Decay",["Shoegaze","Dream Pop"],"",["atmospheric","melancholic","decay","ageing","bittersweet","hazy","introspective","mysterious"]],
+        ["La Estrategia del Caracol","El hambre y las ganas de comer",["Post-Hardcore","Shoegaze"],"",["noisy","energetic","technical","melodic","adolescence","nostalgia","sentimental","summer"]],
+        ["Latinameric anfútbol","Latinameric anfútbol",["Midwest Emo","Screamo"],"",["progressive","complex","melodic","harsh vocals","eclectic","technical","lonely","aggressive"]],
+        ["Fjørt","Belle Époque",["Post-Hardcore","Screamo"],"",["heavy","political","angry","passionate","atmospheric","conscious","rebellious","energetic"]],
+        ["Open Mike Eagle","Doomed!",["Abstract Hip Hop"],"",["breakup","introspective","concept album","mellow","depressive","nocturnal","video games","comics"]],
+        ["Dälek","Brilliance of a Falling Moon",["Industrial Hip Hop"],"",["dark","atmospheric","political","conscious","ominous","sampling","dense","aggressive"]],
+        ["Kelela","New Avatar",["Alternative R&B","Dream Pop"],"real match despite prior meh",["psychedelic","ethereal","atmospheric","sensual","hazy","nocturnal","unrequited love","introspective"]],
+        ["SUMIN","DinnerMode",["Alternative R&B"],"",["smooth","soothing","ethereal","lush","atmospheric","melodic","cozy","rhythmic"]],
+        ["Steve Lacy","Oh Yeah?",["Bedroom Pop","Neo-Soul"],"",["bisexual","love","lush","passionate","sexual","soft","eclectic","psychedelic"]],
+        ["Jill Scott","To Whom This May Concern",["Neo-Soul"],"",["passionate","triumphant","love","warm","mellow","uplifting","sensual","eclectic"]],
+        ["Apparat","A Hum of Maybe",["Art Pop","IDM"],"",["melancholic","atmospheric","playful","progressive","ethereal","twinkling","noisy","psychedelic"]],
+        ["The Mountain Goats","Days",["Indie Rock","Folk Rock"],"",["warm","about music","nostalgia","lush","bittersweet","ageing","introspective","eclectic"]],
+        ["Greg Mendez","Beauty Land",["Indie Folk"],"",["soft","introspective","mellow","dark","acoustic","depressive","regret","lonely"]],
+        ["Man/Woman/Chainsaw","Cannonball",["Indie Rock"],"",["lush","passionate","cozy","summer","epic","eclectic","heavy","progressive"]],
+        ["mary in the junkyard","Role Model Hermit",["Indie Rock","Indie Folk"],"",["melancholic","atmospheric","lonely","introspective","folklore","mellow","longing"]]
+      ]
+    },
+    2025: {
+      "Confirmed favorites": [
+        ["Tyler, The Creator","Don't Tap the Glass",["Pop Rap","Dance"],"",["bouncy","dancing","party","playful","energetic","sexual","boastful","eclectic"]],
+        ["Japanese Breakfast","For Melancholy Brunettes (& Sad Women)",["Indie Folk","Chamber Pop"],"",["sentimental","lush","melancholic","soft","introspective","mellow","atmospheric","warm"]],
+        ["Men I Trust","Equus caballus",["Bedroom Pop","Jangle Pop"],"",["ethereal","rhythmic","psychedelic","atmospheric","soft","mellow","melodic","warm"]],
+        ["Guided by Voices","Thick Rich and Delicious",["Indie Rock","Power Pop"],"",["cryptic","punchy","energetic","callback","rhythmic","warm","melodic"]],
+        ["Nourished by Time","The Passionate Ones",["Bedroom Pop","Alternative R&B"],"",["lush","warm","psychedelic","romantic","conscious","love","melodic","passionate"]],
+        ["Giant Claw","Decadent Stress Chamber",["Glitch Pop","Utopian Virtual"],"",["futuristic","surreal","sampling","dense","progressive","mysterious","noisy","rhythmic"]]
+      ],
+      "Best new discoveries": [
+        ["Deftones","Private Music",["Alternative Metal","Shoegaze"],"",["hazy","atmospheric","dense","heavy","lush","ethereal","melodic","punchy"]],
+        ["Turnstile","Never Enough",["Alternative Rock","Dream Pop"],"",["eclectic","ethereal","lush","energetic","melodic","atmospheric","heavy","bittersweet"]],
+        ["Astronoid","Stargod",["Progressive Metal","Shoegaze"],"",["energetic","rhythmic","progressive","melodic","bright"]],
+        ["Thornhill","Bodies",["Alternative Metal","Djent"],"",["atmospheric","rhythmic","dense","ethereal","heavy","energetic","nocturnal","passionate"]],
+        ["Fleshwater","2000: In Search of the Endless Sky",["Alternative Metal","Shoegaze"],"",["atmospheric","heavy","melodic","melancholic","dense","passionate","energetic","bittersweet"]],
+        ["Between the Buried and Me","The Blue Nowhere",["Progressive Metal","Metalcore"],"",["uncommon time signatures","complex","technical","quirky","angular","aggressive","eclectic","heavy"]],
+        ["Dream Theater","Parasomnia",["Progressive Metal"],"",["technical","dark","uncommon time signatures","complex","heavy","progressive","concept album","nocturnal"]],
+        ["Spiritbox","Tsunami Sea",["Alternative Metal","Djent"],"",["heavy","passionate","aggressive","atmospheric","melancholic","melodic","aquatic","ethereal"]],
+        ["Vildhjarta","Där skogen sjunger under evighetens granar",["Thall","Post-Metal"],"",["dissonant","angular","technical","heavy","dense","avant-garde","complex","atmospheric"]],
+        ["Rosalía","Lux",["Classical Crossover","Orchestral"],"classical/orchestral match",["orchestral","lush","theatrical","maximalist","spiritual","Christian","eclectic","passionate"]],
+        ["Oneohtrix Point Never","Tranquilizer",["Progressive Electronic","Utopian Virtual"],"",["ethereal","sampling","instrumental","atmospheric","nostalgia","futuristic","lush","meditative"]],
+        ["desert sand feels warm at night","Vjaġġi tal-Qalb",["Slushwave"],"",["hazy","psychedelic","ethereal","atmospheric","lethargic","hypnotic","avant-garde","bittersweet"]],
+        ["t e l e p a t h テレパシー能力者","(multiple 2025 releases)",["Slushwave"],"prolific this year, half of 2814",["hazy","hypnotic","twinkling","ethereal","mellow","surreal","lush","calm","repetitive","sampling","love","atmospheric","spring","instrumental","peaceful","meditative","bittersweet","soft","mysterious","soothing"]],
+        ["Casiopea","True Blue",["Jazz Fusion","Jazz-Funk"],"",["instrumental","happy","uplifting","technical","energetic","melodic"]]
+      ],
+      "Worth a shot": [
+        ["Earl Sweatshirt","Live Laugh Love",["Abstract Hip Hop"],"",["sampling","mellow","warm","parenthood","introspective","abstract","lethargic","optimistic"]],
+        ["MIKE","Showbiz!",["Abstract Hip Hop"],"",["warm","spiritual","sampling","abstract","psychedelic","poetic","deadpan","mellow"]],
+        ["Armand Hammer","Mercy",["Abstract Hip Hop"],"",["poetic","abstract","introspective","sampling","political","mysterious","surreal","history"]],
+        ["Navy Blue","The Sword & the Soaring",["Drumless","Jazz Rap"],"",["spiritual","meditative","introspective","soothing","peaceful","self-love","bright","mental health"]],
+        ["Aesop Rock","Black Hole Superette",["Abstract Hip Hop"],"",["cryptic","abstract","complex","rhythmic","quirky","sampling","technical","playful"]],
+        ["Saba","From the Private Collection of Saba and No ID",["Jazz Rap"],"",["lush","conscious","rhythmic","introspective","sampling","uplifting","mellow","warm"]],
+        ["redveil","Sankofa",["Jazz Rap","Conscious Hip Hop"],"",["lush","mellow","warm","soothing","sampling","optimistic","passionate","conscious"]],
+        ["Blu","Forty",["Conscious Hip Hop"],"",["warm","introspective","sampling","ageing","conscious","poetic","love","serious"]],
+        ["billy woods","Golliwog",["Abstract Hip Hop"],"",["dark","poetic","disturbing","avant-garde","ominous","scary","political","sampling"]],
+        ["R.A.P. Ferreira","The Night Green Side of It",["Abstract Hip Hop"],"",["sampling","rhythmic","abstract","poetic","melancholic","bittersweet","introspective","technical"]],
+        ["Preservation","Sortilège",["Abstract Hip Hop"],"",["sampling","conscious","political","ominous","passionate","rhythmic","atmospheric","raw"]],
+        ["Open Mike Eagle","Neighborhood Gods Unlimited",["Abstract Hip Hop"],"",["introspective","playful","soft","humorous","optimistic","calm","abstract","mellow"]],
+        ["Sadness","That Lasts Forever",["Shoegaze","Emo"],"recurring strong match",["warm","sentimental","passionate","energetic","ethereal","bittersweet","melancholic","spring"]],
+        ["Hatchie","Liquorice",["Dream Pop","Shoegaze"],"",["lush","atmospheric","love","bittersweet","ethereal","psychedelic","melodic","pastiche"]],
+        ["Just Mustard","We Were Just Here",["Shoegaze"],"",["ethereal","psychedelic","noisy","atmospheric","nocturnal","rhythmic","hazy","dense"]],
+        ["Momma","Welcome to My Blue Sky",["Shoegaze","Power Pop"],"",["love","rhythmic","longing","summer","lush","dense","atmospheric","melancholic"]],
+        ["Slow Crush","Thirst",["Doomgaze","Shoegaze"],"",["atmospheric","longing","melancholic","ethereal","passionate","noisy","introspective","mysterious"]],
+        ["Planning for Burial","It's Closeness, It's Easy",["Doomgaze"],"",["atmospheric","melancholic","passionate","hypnotic","sombre","noisy","sad","heavy"]],
+        ["La Dispute","No One Was Driving the Car",["Emo","Post-Hardcore"],"",["poetic","passionate","existential","death","melancholic","serious","introspective","mental health"]],
+        ["Racecourse","July, December",["Slacker Rock","Dream Pop"],"",["mellow","warm","introspective","melancholic","twinkling","melodic","love","bittersweet"]],
+        ["letterstoyou","Lunar Memory Scars",["Screamo","Metalcore"],"",["heavy","aggressive","dissonant","chaotic","noisy","raw","technical","passionate"]],
+        ["The Callous Daoboys","I Don't Want to See You in Heaven",["Mathcore","Metalcore"],"",["quirky","complex","eclectic","energetic","chaotic","surreal","melodic","heavy"]],
+        ["Hail the Sun","Cut. Turn. Fade. Back.",["Post-Hardcore","Swancore"],"",["political","energetic","passionate","trauma","domestic","dense","aggressive","anti-authoritarian"]],
+        ["Greyhaven","Keep It Quiet",["Metalcore","Post-Hardcore"],"",["melodic","rhythmic","heavy","energetic","aggressive","dense","harsh vocals","passionate"]],
+        ["Kardashev","Alunea",["Post-Metal","Deathcore"],"",["melancholic","dense","atmospheric","complex","progressive","heavy","uncommon time signatures","ethereal"]],
+        ["Wet Leg","moisturizer",["Post-Punk Revival"],"",["love","romantic","rebellious","noisy","deadpan","sensual","longing","quirky"]],
+        ["Car Seat Headrest","The Scholars",["Indie Rock","Rock Opera"],"",["theatrical","love","religious","LGBTQ","anthemic","passionate","introspective","lonely"]],
+        ["Horsegirl","Phonetics On and On",["Indie Rock","Twee Pop"],"",["hypnotic","deadpan","repetitive","rhythmic","minimalistic","playful","quirky","soft"]],
+        ["The Beths","Straight Line Was a Lie",["Indie Rock"],"",["energetic","mental health","bittersweet","melodic","love","introspective","poetic","sentimental"]],
+        ["Stereolab","Instant Holograms on Metal Film",["Neo-Psychedelia"],"",["bright","socialism","warm","lush","hypnotic","psychedelic","melodic","conscious"]],
+        ["Panda Bear","Sinister Grift",["Neo-Psychedelia"],"",["psychedelic","lush","melodic","melancholic","bittersweet","breakup","tropical","warm"]],
+        ["The Necks","Disquiet",["Avant-Garde Jazz"],"",["repetitive","hypnotic","improvisation","instrumental","atmospheric","meditative","lush","free rhythm"]],
+        ["GoGo Penguin","Necessary Fictions",["Nu Jazz"],"",["lush","soothing","instrumental","mellow","rhythmic","melodic","eclectic","atmospheric"]],
+        ["Alfa Mist","Roulette",["Jazz Fusion"],"",["playful","calm","eclectic","ethereal","dense","uncommon time signatures","rhythmic","mellow"]],
+        ["Kokoroko","Tuff Times Never Last",["Jazz Fusion","Afrobeat"],"",["calm","mellow","peaceful","happy","uplifting"]],
+        ["Cécile McLorin Salvant","Oh Snap",["Vocal Jazz","Art Pop"],"",["eclectic","abstract","playful","uncommon time signatures","quirky","warm","avant-garde","improvisation"]],
+        ["Ninajirachi","I Love My Computer",["Electro House","Electropop"],"",["internet","technology","energetic","nostalgia","bouncy","quirky","about music","party"]],
+        ["Jane Remover","Revengeseekerz",["Digicore","Hyperpop"],"",["chaotic","dense","noisy","manic","energetic","party","maximalist","aggressive"]],
+        ["Windows 96","Awkward Dance Music",["Chillsynth","Vaporwave"],"",["atmospheric","sampling","melodic","instrumental","surreal","psychedelic","ethereal","rhythmic"]],
+        ["FKA twigs","Eusexua",["Electronic Dance Music","Alternative R&B"],"",["sensual","futuristic","ethereal","sexual","nocturnal","eclectic","mechanical","atmospheric"]],
+        ["clipping.","Dead Channel Sky",["Industrial Hip Hop"],"",["science fiction","concept album","noisy","rhythmic","futuristic","crime","cyberpunk","eclectic"]],
+        ["Twenty One Pilots","Breach",["Alternative Rock","Alt-Pop"],"",["concept album","mental health","passionate","introspective","bittersweet","eclectic","regret","anthemic"]],
+        ["Alex G","Headlights",["Indie Folk"],"prior meh",["mellow","psychedelic","introspective","hazy","melancholic","sentimental","bittersweet","pastoral"]],
+        ["Big Thief","Double Infinity",["Folk Rock","Neo-Psychedelia"],"prior meh",["psychedelic","poetic","lush","ageing","ethereal","repetitive","uplifting","soft"]],
+        ["Suede","Antidepressants",["Alternative Rock","Post-Punk"],"prior meh",["mental health","dark","anxious","melancholic","existential","paranoia","sentimental","alienation"]],
+        ["Panchiko","Ginkgo",["Indie Rock","Neo-Psychedelia"],"prior meh",["melancholic","atmospheric","psychedelic","warm","surreal","ethereal","lush","hypnotic"]],
+        ["NewDad","Altar",["Indie Rock","Dream Pop"],"prior meh",["melodic"]],
+        ["Addison Rae","Addison",["Alt-Pop","Contemporary R&B"],"prior meh",["lush","sensual","ethereal","hedonism","fashion","summer","fame","money"]],
+        ["Laufey","A Matter of Time",["Traditional Pop"],"orchestral tag ties to classical interest; prior meh",["orchestral","love","lush","melodic","romantic","longing","introspective","time"]],
+        ["Danny Brown","Stardust",["Experimental Hip Hop","Hyperpop"],"prior meh",["eclectic","introspective","quirky","futuristic","uplifting","sobriety","playful","bouncy"]],
+        ["yeule","Evangelic Girl Is a Gun",["Alternative Rock","Glitch Pop"],"prior meh",["atmospheric","eclectic","bisexual","ethereal","introspective","nocturnal","sexual","dark"]]
+      ]
+    },
+    2024: {
+      "Confirmed favorites": [
+        ["Magdalena Bay","Imaginal Disk",["Neo-Psychedelia","Synthpop"],"",["lush","psychedelic","ethereal","surreal","dense","melodic","love","concept album"]],
+        ["Charli xcx","Brat",["Electropop","EDM"],"",["party","introspective","hedonism","rhythmic","energetic","bittersweet","boastful","repetitive"]],
+        ["Charli xcx","Brat and It's Completely Different but Also Still Brat",["Electropop"],"",["party","energetic","playful","introspective","hedonism","futuristic","eclectic","rhythmic"]],
+        ["Kendrick Lamar","GNX",["Hip Hop"],"",["boastful","aggressive","energetic","rhythmic","conscious","introspective","sampling","triumphant"]],
+        ["Tyler, The Creator","Chromakopia",["Hip Hop","Neo-Soul"],"",["introspective","eclectic","sexual","LGBTQ","sampling","love","lush","quirky"]],
+        ["Louis Cole","nothing",["Art Pop","Classical Crossover"],"classical crossover match",["orchestral","lush","eclectic","melodic","playful","energetic","quirky","rhythmic"]],
+        ["Ginger Root","Shinbangumi",["Hypnagogic Pop","Neo-City Pop"],"",["concept album","quirky","warm","melodic","playful","bittersweet","urban","lush"]],
+        ["death's dynamic shroud","You Like Music",["Deconstructed Club","IDM"],"",["manic","sampling","mechanical","chaotic","surreal","rhythmic","dense","complex"]],
+        ["Sungazer","Against the Fall of Night",["Jazz Fusion","Progressive Rock"],"",["progressive","uncommon time signatures","instrumental","complex","dense","technical","rhythmic","energetic"]],
+        ["Intervals","Memory Palace",["Progressive Metal","Djent"],"",["technical","instrumental","progressive","futuristic","uncommon time signatures","rhythmic","complex","melodic"]],
+        ["The Story So Far","I Want to Disappear",["Pop Punk"],"",["melodic","energetic","melancholic","passionate","bittersweet","death","introspective","sad"]]
+      ],
+      "Best new discoveries": [
+        ["Vampire Weekend","Only God Was Above Us",["Chamber Pop","Baroque Pop"],"",["playful","psychedelic","lush","existential","melodic","urban","quirky","warm"]],
+        ["Cindy Lee","Diamond Jubilee",["Hypnagogic Pop","Psychedelic Pop"],"",["lo-fi","bittersweet","psychedelic","longing","love","atmospheric","surreal","warm"]],
+        ["Chat Pile","Cool World",["Noise Rock","Sludge Metal"],"",["heavy","depressive","aggressive","apocalyptic","dissonant","dark","noisy","raw"]],
+        ["Max Richter","In a Landscape",["Ambient","Modern Classical"],"Mahler-adagietto-adjacent",["instrumental","melancholic","atmospheric","orchestral","lush","longing","calm","winter"]],
+        ["Heriot","Devoured by the Mouth of Hell",["Metalcore","Doomgaze"],"",["heavy","noisy","aggressive","dark","energetic","dissonant","atmospheric","ominous"]],
+        ["Nala Sinephro","Endlessness",["Jazz Fusion","Progressive Electronic"],"",["lush","soothing","space","instrumental","hypnotic","calm","peaceful","progressive"]],
+        ["Kamasi Washington","Fearless Movement",["Jazz Fusion","Spiritual Jazz"],"",["spiritual","improvisation","epic","lush","passionate","uplifting","complex","rhythmic"]]
+      ],
+      "Worth a shot": [
+        ["VOLA","Friend of a Phantom",["Alternative Metal","Djent"],"",["melodic","heavy","introspective","lush","atmospheric","futuristic","cryptic","melancholic"]],
+        ["Wheel","Charismatic Leaders",["Progressive Metal"],"",["heavy","political","dark","melancholic","progressive","passionate","angry","uncommon time signatures"]],
+        ["Eidola","Eviscerate",["Progressive Metal","Djent"],"",["existential","antireligious","heavy","aggressive","progressive","spiritual","technical","harsh vocals"]],
+        ["Bipolar Architecture","Metaphysicize",["Post-Metal","Djent"],"",["rhythmic","angry","heavy","harsh vocals"]],
+        ["Boston Manor","Sundiver",["Alternative Rock","Shoegaze"],"",["passionate","love","energetic","melodic","heavy","anxious","rhythmic","harsh vocals"]],
+        ["trauma ray","Chameleon",["Shoegaze","Doomgaze"],"",["noisy","heavy","ethereal","lush","energetic","dense","dark","rhythmic"]],
+        ["Iress","Sleep Now, in Reverse",["Doomgaze","Ethereal Wave"],"",["ethereal","atmospheric","longing","melancholic","lush"]],
+        ["Glassing","From the Other Side of the Mirror",["Post-Metal","Blackgaze"],"",["heavy","atmospheric","passionate","melodic","cold","nocturnal","longing","dark"]],
+        ["Infant Island","Obsidian Wreath",["Screamo","Blackgaze"],"",["longing","aggressive","heavy","dense","existential","apocalyptic","atmospheric","lush"]],
+        ["Julian Lage","Speak to Me",["Jazz Fusion"],"",["instrumental","improvisation","eclectic","uncommon time signatures","calm","lush","rhythmic","melodic"]],
+        ["Mary Halvorson","Cloudward",["Avant-Garde Jazz"],"",["complex","playful","instrumental","dense","technical","chaotic","polyphonic","uncommon time signatures"]],
+        ["The Messthetics","The Messthetics and James Brandon Lewis",["Jazz-Rock"],"",["instrumental","rhythmic","improvisation","progressive","technical","energetic","warm","suspenseful"]],
+        ["Vijay Iyer","Compassion",["Avant-Garde Jazz","Post-Bop"],"",["instrumental","technical","warm","sparse","improvisation","avant-garde","acoustic","lush"]],
+        ["Ezra Collective","Dance, No One's Watching",["Jazz Fusion","Afrobeat"],"",["improvisation","uplifting","rhythmic","instrumental","warm","energetic","lush","atmospheric"]],
+        ["Nubya Garcia","Odyssey",["Jazz Fusion","Spiritual Jazz"],"",["lush","playful","passionate","improvisation","warm","spiritual","atmospheric","eclectic"]],
+        ["Charles Lloyd","The Sky Will Still Be There Tomorrow",["Post-Bop"],"",["improvisation","mellow","calm","complex","instrumental","soft","technical","lush"]],
+        ["Jaubi","A Sound Heart",["Jazz Fusion","Spiritual Jazz"],"",["instrumental","spiritual","improvisation","rhythmic","complex","energetic","passionate","eclectic"]],
+        ["Ill Considered","Precipice",["Avant-Garde Jazz"],"",["instrumental","atmospheric","technical","improvisation","warm","dense","rhythmic"]],
+        ["Sam Wilkes","Sam Wilkes, Craig Weinrib, and Dylan Day",["Jazz Fusion"],"",["mellow","peaceful","ethereal","pastoral","improvisation","spiritual","technical","atmospheric"]],
+        ["Foxing","Foxing",["Art Rock","Indie Rock"],"",["dense","raw","atmospheric","introspective","passionate","noisy","anxious","eclectic"]],
+        ["State Faults","Children of the Moon",["Screamo","Post-Rock"],"",["atmospheric","technical","heavy","melancholic","energetic","passionate","winter","concept album"]],
+        ["Clamor","Para no olvidarte",["Emo","Post-Hardcore"],"",["sentimental","raw","energetic","anxious","angry","melancholic","passionate","melodic"]],
+        ["Doris","Four Trees",["Emo","Post-Hardcore"],"",["melancholic","noisy","melodic","dense","passionate","raw","introspective"]],
+        ["dim","Planted in the Soil",["Screamo","Post-Rock"],"",["passionate","sad","melancholic","melodic","love","introspective","existential"]],
+        ["Sesame","I Will Turn, I Will, I Will",["Screamo","Slowcore"],"",["dark","depressive","raw","heavy","noisy","aggressive","angry","ominous"]],
+        ["Terry Green","Provisional Living",["Screamo","Post-Hardcore"],"",["aggressive","energetic","warm","technical","melodic","passionate"]],
+        ["Fontaines D.C.","Romance",["Indie Rock","Post-Britpop"],"",["melodic","love","lush","eclectic","introspective","longing","bittersweet","anxious"]],
+        ["St. Vincent","All Born Screaming",["Art Rock","Neo-Psychedelia"],"",["eclectic","nocturnal","psychedelic","dark","surreal","anxious","apocalyptic","dense"]],
+        ["MJ Lenderman","Manning Fireworks",["Alt-Country","Slacker Rock"],"",["longing","introspective","humorous","melancholic","bittersweet","breakup","autumn","lonely"]],
+        ["Giacinto Scelsi","Intégrale des quatuors à cordes; Trio à cordes",["Modern Classical","String Quartet"],"literal string quartets",["atonal","microtonal","instrumental"]],
+        ["Kelly Moran","Moves in the Field",["Modern Classical"],"",["instrumental","melodic","ethereal","peaceful","meditative","mellow","technical","atmospheric"]],
+        ["Philip Glass","Philip Glass Solo",["Minimalism"],"",["instrumental","meditative","melancholic","acoustic","calm","minimalistic","atmospheric","unaccompanied solo"]],
+        ["Sadness","I Love You / As Beautiful As You / Burning as the First Light",["Shoegaze","Blackgaze"],"three albums this year",["love","ethereal","passionate","lush","bittersweet","dense","energetic","noisy","melancholic","atmospheric","romantic","sentimental"]],
+        ["Fire-Toolz","Breeze",["Avant-Garde Metal","Utopian Virtual"],"",["avant-garde","chaotic","futuristic","eclectic","surreal","progressive","noisy","heavy"]],
+        ["Squarepusher","Dostrotime",["Drill and Bass"],"",["instrumental","energetic","chaotic","atmospheric","dense","dark","noisy","technical"]],
+        ["Namitape","Overfeel",["Indietronica","Electropop"],"",["rhythmic","uplifting","urban","ethereal","lush","eclectic"]],
+        ["Blu & Exile","Love (the) Ominous World",["Jazz Rap"],"",["sampling","conscious","introspective","optimistic","urban","rhythmic","summer"]],
+        ["The Cure","Songs of a Lost World",["Gothic Rock","Dream Pop"],"acclaimed but gothic — no prior signal",["atmospheric","melancholic","sombre","dark","ethereal","death","depressive","serious"]],
+        ["Kelela","RAVE:N, the Remixes",["Alternative R&B"],"prior meh",["sampling","party","ethereal","love","eclectic","atmospheric","passionate","urban"]],
+        ["Michael Kiwanuka","Small Changes",["Smooth Soul"],"prior meh",["warm","mellow","introspective","lush","peaceful","psychedelic","rhythmic","melancholic"]],
+        ["RM","Right Place, Wrong Person",["Contemporary R&B","Jazz Rap"],"prior meh",["eclectic","introspective","mellow","rhythmic","atmospheric","calm","bittersweet","progressive"]],
+        ["Twenty One Pilots","Clancy",["Alt-Pop","Indie Rock"],"prior meh",["eclectic","introspective","anxious","concept album","melodic","suicide","death","energetic"]],
+        ["NewDad","Madra",["Indie Rock","Dream Pop"],"prior meh",["melancholic","atmospheric","ethereal","bittersweet","nocturnal","longing","cold","psychedelic"]],
+        ["Kali Uchis","Orquídeas",["Contemporary R&B"],"prior meh",["eclectic","romantic","sensual","love","sexual","lush","warm","ethereal"]],
+        ["Adrianne Lenker","Bright Future",["Singer-Songwriter"],"prior meh",["soft","bittersweet","acoustic","sentimental","longing","melancholic","introspective","poetic"]]
+      ]
+    },
+    2020: {
+      "Confirmed favorites": [
+        ["Charli xcx","How I'm Feeling Now",["Hyperpop","Electropop"],"your #38 most-played artist",["longing","love","noisy","lonely","introspective","sentimental","romantic","bittersweet"]],
+        ["Ginger Root","Rikki",["Bedroom Pop","Synth Funk"],"your #6 most-played artist",["lo-fi","warm","playful","mellow","summer","bittersweet","atmospheric"]],
+        ["Plini","Impulse Voices",["Progressive Metal","Jazz Fusion"],"your #29 most-played artist",["instrumental","technical","progressive","complex","lush","atmospheric","heavy"]],
+        ["Invent Animate","Greyview",["Metalcore","Djent"],"your #28 most-played artist",["passionate","heavy","atmospheric","sad","melancholic","melodic","harsh vocals","progressive"]],
+        ["King Krule","Man Alive!",["Art Rock","Experimental Rock"],"recurring artist — \"Space Heavy\" (2023, Worth a shot) already on your list",["nocturnal","melancholic","lonely","atmospheric","psychedelic","introspective","surreal","sombre"]],
+        ["Intervals","Circadian",["Progressive Metal","Progressive Rock"],"your #13 most-played artist",["instrumental","happy","uplifting","melodic","technical","playful","uncommon time signatures","rhythmic"]],
+        ["Deerhoof","Future Teenage Cave Artists",["Indie Rock","Noise Pop"],"recurring artist — \"Actually, You Can\" (2021, Best new discoveries) already on your list",["noisy","melodic","abstract","psychedelic","eclectic","quirky","playful","mellow"]],
+        ["Wednesday","I Was Trying to Describe You to Someone",["Shoegaze","Dream Pop"],"recurring artist — \"Twin Plagues\" (2021, Confirmed favorites) already on your list",["atmospheric","raw","noisy","melancholic","lonely","sad","bittersweet","warm"]],
+        ["Loathe","I Let It In and It Took Everything",["Alternative Metal","Metalcore"],"recurring artist — \"A Stranger to You\" (2026, Best new discoveries) already on your list",["melancholic","atmospheric","heavy","aggressive","dense","dissonant","noisy","dark"]],
+        ["Thundercat","It Is What It Is",["Neo-Soul","Jazz Fusion"],"recurring artist — \"Distracted\" (2026, Confirmed favorites) already on your list",["playful","lush","psychedelic","warm","sensual","mellow","quirky","soft"]],
+        ["Sufjan Stevens","The Ascension",["Indietronica","Ambient Pop"],"recurring artist — \"Javelin\" (2023, Worth a shot) already on your list",["atmospheric","love","melancholic","existential","introspective","lush","spiritual","futuristic"]]
+      ],
+      "Best new discoveries": [
+        ["Infant Island","Beneath",["Screamo","Ambient"],"recurring artist — \"Obsidian Wreath\" (2024, Worth a shot) already on your list",["aggressive","chaotic","noisy","atmospheric","passionate","cryptic","dark","heavy"]],
+        ["Armand Hammer","Shrines",["Abstract Hip Hop","Conscious Hip Hop"],"recurring artist — \"WHT LBL\" (2022, Worth a shot) already on your list",["sampling","abstract","dark","atmospheric","philosophical","urban","conscious","apocalyptic"]],
+        ["Jean Dawson","Pixel Bath",["Indie Pop","Indie Rock"],"recurring artist — \"CHAOS NOW*\" (2022, Worth a shot) already on your list",["summer","eclectic","energetic","warm","rebellious","atmospheric","melodic","aggressive"]],
+        ["Nothing","The Great Dismal",["Shoegaze","Dream Pop"],"recurring artist — \"A Short History of Decay\" (2026, Worth a shot) already on your list",["sombre","melancholic","atmospheric","melodic","bittersweet","ethereal","nocturnal","noisy"]],
+        ["Deftones","Ohms",["Alternative Metal","Post-Metal"],"recurring artist — \"Private Music\" (2025, Best new discoveries) already on your list",["atmospheric","heavy","passionate","dense","melodic","ethereal","melancholic","dark"]],
+        ["Narrow Head","12th House Rock",["Alternative Rock","Post-Hardcore"],"recurring artist — \"Moments of Clarity\" (2023, Worth a shot) already on your list",["noisy","heavy","dense","melancholic","raw","melodic","passionate","anxious"]],
+        ["The Weeknd","After Hours",["Alternative R&B","Synthpop"],"recurring artist — \"Dawn FM\" (2022, Confirmed favorites) already on your list",["nocturnal","atmospheric","sexual","dark","ethereal","urban","lonely","breakup"]],
+        ["Currents","The Way It Ends",["Djent","Alternative Metal"],"recurring artist — \"The Death We Seek\" (2023, Worth a shot) already on your list",["melodic","introspective","harsh vocals","heavy","aggressive","angry","energetic","passionate"]],
+        ["Oneohtrix Point Never","Magic Oneohtrix Point Never",["Progressive Electronic","Sound Collage"],"recurring artist — \"Tranquilizer\" (2025, Best new discoveries) already on your list",["futuristic","psychedelic","surreal","ethereal","eclectic","dense","lush","concept album"]],
+        ["Tigran Hamasyan","The Call Within",["Jazz Fusion","Armenian Folk Music"],"recurring artist — \"Manifeste\" (2026, Best new discoveries) already on your list",["uncommon time signatures","progressive","energetic","complex","technical","mysterious","improvisation","instrumental"]],
+        ["Nubya Garcia","Source",["Spiritual Jazz","Jazz Fusion"],"recurring artist — \"Odyssey\" (2024, Worth a shot) already on your list",["spiritual","warm","passionate","instrumental","mellow","improvisation","lush","eclectic"]],
+        ["Deerhoof","Love-Lore",["Experimental Rock","Noise Rock"],"recurring artist — \"Actually, You Can\" (2021, Best new discoveries) already on your list",["medley","noisy","psychedelic","uncommon time signatures","eclectic","anxious","playful","quirky"]],
+        ["A.A. Williams","Forever Blue",["Post-Rock","Slowcore"],"recurring artist — \"As the Moon Rests\" (2022, Worth a shot) already on your list",["atmospheric","melancholic","longing","melodic","introspective","dark"]],
+        ["Navy Blue","Song of Sage: Post Panic!",["Conscious Hip Hop","Abstract Hip Hop"],"recurring artist — \"Navy's Reprise\" (2021, Best new discoveries) already on your list",["introspective","sombre","poetic","sampling","conscious","lush","bittersweet","uplifting"]]
+      ],
+      "Worth a shot": [
+        ["Preservation","Eastern Medicine, Western Illness",["Abstract Hip Hop","East Asian Music"],"recurring artist — \"Sortilège\" (2025, Worth a shot) already on your list",["sampling","atmospheric","urban","spiritual","political","eclectic","concept album","philosophical"]],
+        ["Good Tiger","Raised in a Doomsday Cult",["Progressive Rock","Alternative Rock"],"recurring artist — \"The Most Negative Day of the Year\" (2026, Worth a shot) already on your list",["melodic","progressive","energetic","passionate"]],
+        ["brakence","Punk2",["Emo Rap","Emo-Pop"],"recurring artist — \"Hypochondriac\" (2022, Worth a shot) already on your list",["sexual","melodic","raw","introspective","LGBTQ","eclectic","bittersweet","sensual"]],
+        ["Moor Mother","Brass",["Abstract Hip Hop","Experimental Hip Hop"],"recurring artist — \"Black Encyclopedia of the Air\" (2021, Worth a shot) already on your list",["dark","abstract","cryptic","political","atmospheric","sampling","cold","ominous"]],
+        ["R.A.P. Ferreira","Purple Moonlight Pages",["Jazz Rap","Abstract Hip Hop"],"recurring artist — \"The Light Emitting Diamond Cutter Scriptures\" (2021, Worth a shot) already on your list",["poetic","introspective","abstract","philosophical","rhythmic","sampling","mellow","optimistic"]],
+        ["ヨルシカ","盗作",["Pop Rock","Jazz Fusion"],"recurring artist — \"二人称\" (2026, Best new discoveries) already on your list",["melodic","bittersweet","warm","sentimental","poetic","melancholic","introspective","love"]],
+        ["Patricia Taxxon","Gelb",["Electro House","Electronic Dance Music"],"recurring artist — \"Yes, And\" (2021, Worth a shot) already on your list",["warm","futuristic","eclectic","energetic","fantasy","manic","dense","quirky"]],
+        ["MIKE","Weight of the World",["Abstract Hip Hop","Cloud Rap"],"recurring artist — \"\"Disco!\"\" (2021, Confirmed favorites) already on your list",["sampling","lo-fi","melancholic","hypnotic","psychedelic","introspective","lethargic","raw"]],
+        ["Soccer Mommy","Color Theory",["Singer-Songwriter","Dream Pop"],"recurring artist — \"Sometimes, Forever\" (2022, Worth a shot) already on your list",["melancholic","introspective","depressive","melodic","self-hatred","mellow","sad","death"]],
+        ["desert sand feels warm at night","ユートピアへの旅",["Slushwave","Vaporwave"],"recurring artist — \"Vjaġġi tal-Qalb\" (2025, Best new discoveries) already on your list",["atmospheric","calm","surreal","sampling","nocturnal","longing","peaceful","ethereal"]],
+        ["Mary Halvorson","Artlessly Falling",["Avant-Garde Jazz","Jazz-Rock"],"recurring artist — \"Cloudward\" (2024, Worth a shot) already on your list",["avant-garde","improvisation","uncommon time signatures","progressive","warm","technical","complex","abstract"]],
+        ["Cartier'GOD","Cartier Vision",["Cloud Rap","Trap"],"recurring artist — \"Gold Fangz\" (2021, Worth a shot) already on your list",["lush","psychedelic","ethereal","aquatic","atmospheric","surreal","lethargic","dense"]],
+        ["Irreversible Entanglements","Who Sent You?",["Jazz Poetry","Spiritual Jazz"],"recurring artist — \"Open the Gates\" (2021, Worth a shot) already on your list",["political","dark","rhythmic","avant-garde","energetic","poetic","spiritual","deadpan"]],
+        ["Polaris","The Death of Me",["Metalcore","Alternative Metal"],"recurring artist — \"Fatalism\" (2023, Worth a shot) already on your list",["angry","heavy","energetic","melodic","anxious","aggressive","harsh vocals","sombre"]],
+        ["redveil","Niagara",["Abstract Hip Hop","Jazz Rap"],"recurring artist — \"Sankofa\" (2025, Worth a shot) already on your list",["warm","mellow","sampling","playful","energetic","rhythmic","drugs","abstract"]],
+        ["Misery Signals","Ultraviolet",["Metalcore","Progressive Metal"],"your #11 most-played artist",["melodic","energetic","anxious","uncommon time signatures","introspective","melancholic","lush","heavy"]],
+        ["Blu & Exile","Miles",["Conscious Hip Hop","Jazz Rap"],"recurring artist — \"Love (the) Ominous World\" (2024, Worth a shot) already on your list",["conscious","introspective","lush","sampling","optimistic","sentimental","spiritual","uplifting"]],
+        ["Boundaries","Your Receding Warmth",["Metalcore","Melodic Metalcore"],"recurring artist — \"Yearning: The Unbeautiful After\" (2026, Worth a shot) already on your list",["heavy","introspective","hateful","self-hatred","dense","bassy","punchy","harsh vocals"]],
+        ["tricot","10",["Shimokita-kei","Math Pop"],"recurring artist — \"上出来\" (2021, Confirmed favorites) already on your list",["energetic","melodic","playful","rhythmic","bittersweet","uplifting","summer","mellow"]],
+        ["GoGo Penguin","GoGo Penguin",["Jazz Fusion","Post-Minimalism"],"recurring artist — \"Necessary Fictions\" (2025, Worth a shot) already on your list",["instrumental","energetic","dense","rhythmic","complex","lush","uplifting","melodic"]],
+        ["Moor Mother","True Opera",["Noise Rock","Industrial Rock"],"recurring artist — \"Black Encyclopedia of the Air\" (2021, Worth a shot) already on your list",["noisy","energetic","angry","alienation","rhythmic","protest","raw","aggressive"]],
+        ["Patricia Taxxon","Rosa",["Progressive Electronic","Brostep"],"recurring artist — \"Yes, And\" (2021, Worth a shot) already on your list",["melodic","warm","futuristic","eclectic","mechanical","uncommon time signatures","rhythmic"]],
+        ["desert sand feels warm at night","雲海に漂う",["Slushwave","New Age"],"recurring artist — \"Vjaġġi tal-Qalb\" (2025, Best new discoveries) already on your list",["calm","atmospheric","mellow","ethereal","nocturnal","surreal","soothing","cold"]],
+        ["The Beths","Jump Rope Gazers",["Indie Rock","Power Pop"],"recurring artist — \"Straight Line Was a Lie\" (2025, Worth a shot) already on your list",["bittersweet","longing","melodic","melancholic","summer","energetic","love","mellow"]],
+        ["Fontaines D.C.","A Hero's Death",["Post-Punk","Indie Rock"],"recurring artist — \"Skinty Fia\" (2022, Worth a shot) already on your list",["dark","rhythmic","deadpan","protest","poetic","sombre","philosophical","raw"]],
+        ["Sadness","Alluring the Distant Eye",["Atmospheric Black Metal","Blackgaze"],"recurring artist — \"Tortuga\" (2022, Worth a shot) already on your list",["atmospheric","ethereal","melancholic","nocturnal","dense","forest","dark","sombre"]],
+        ["長谷川白紙","夢の骨が襲いかかる!",["Jazz Pop","Progressive Pop"],"recurring artist — \"素直な気持ちアルバム\" (2026, Best new discoveries) already on your list",["passionate","playful","peaceful","melodic","mellow","soothing","atmospheric","lush"]],
+        ["desert sand feels warm at night","0:22",["Slushwave","Ambient"],"recurring artist — \"Vjaġġi tal-Qalb\" (2025, Best new discoveries) already on your list",["melancholic","soothing","warm","sentimental","sampling","calm","ethereal","atmospheric"]],
+        ["Adrianne Lenker","Songs",["Singer-Songwriter","Contemporary Folk"],"recurring artist — \"Bright Future\" (2024, Worth a shot) already on your list",["pastoral","acoustic","soothing","soft","bittersweet","melancholic","nature","LGBTQ"]],
+        ["desert sand feels warm at night","夜道",["Slushwave","New Age"],"recurring artist — \"Vjaġġi tal-Qalb\" (2025, Best new discoveries) already on your list",["atmospheric","nocturnal","soft","soothing","ethereal","instrumental","mellow","calm"]],
+        ["desert sand feels warm at night","常夏",["Slushwave","Ambient"],"recurring artist — \"Vjaġġi tal-Qalb\" (2025, Best new discoveries) already on your list",["atmospheric","warm","mellow","calm","summer","soothing","lush"]],
+        ["안다영","Antihero",["Art Pop","Neo-Psychedelia"],"",["psychedelic","nocturnal","melancholic","progressive","ethereal","lush","sentimental","sensual"]],
+        ["Cindy Lee","Cat o' Nine Tails",["Hypnagogic Pop","Minimal Synth"],"recurring artist — \"Diamond Jubilee\" (2024, Best new discoveries) already on your list",["lo-fi","calm","soothing","atmospheric","noisy","lonely","psychedelic","cats"]],
+        ["Osees","Protean Threat",["Psychedelic Rock","Synth Punk"],"recurring artist — \"Intercepted Message\" (2023, Worth a shot) already on your list",["rhythmic","noisy","raw","repetitive","energetic","dissonant","psychedelic","science fiction"]],
+        ["Phoebe Bridgers","Punisher",["Singer-Songwriter","Indie Folk"],"your #4 most-played artist",["mellow","lonely","melancholic","sad","longing","sentimental","nocturnal","introspective"]],
+        ["Aesop Rock","Spirit World Field Guide",["Abstract Hip Hop","Experimental Hip Hop"],"recurring artist — \"Garbology\" (2021, Worth a shot) already on your list",["concept album","complex","cryptic","forest","poetic","fantasy","abstract","alienation"]],
+        ["Gorillaz","Song Machine, Season One",["Synthpop","Alternative Dance"],"",["eclectic","quirky","rhythmic","playful","melodic","lush","urban","warm"]],
+        ["Triángulo de Amor Bizarro","Triángulo de Amor Bizarro",["Noise Pop","Shoegaze"],"",["noisy","energetic","lush","eclectic","dark","passionate","ethereal","melodic"]],
+        ["Kali Uchis","Sin miedo (del amor y otros demonios) ∞",["Contemporary R&B","Neo-Soul"],"recurring artist — \"Red Moon in Venus\" (2023, Worth a shot) already on your list",["sensual","lush","love","mellow","soothing","passionate","romantic","hypnotic"]],
+        ["Protest the Hero","Palimpsest",["Progressive Metal","Melodic Metalcore"],"recurring artist — \"Within\" (2026, Worth a shot) already on your list",["technical","concept album","conscious","history","complex","uncommon time signatures","political","epic"]],
+        ["Red Vox","Realign",["Neo-Psychedelia","Dream Pop"],"",["ethereal","psychedelic","bittersweet","surreal","melodic","nocturnal","introspective","atmospheric"]],
+        ["Boneflower","Armour",["Screamo","Metalcore"],"",["passionate","melancholic","atmospheric","lonely","energetic","anxious","melodic","longing"]],
+        ["Herbario","Después de las palabras",["Indie Pop","Jangle Pop"],"",["ethereal","lush","sentimental","melodic","bittersweet","psychedelic","hypnotic","atmospheric"]],
+        ["The Necks","Three",["Avant-Garde Jazz","ECM Style Jazz"],"recurring artist — \"Disquiet\" (2025, Worth a shot) already on your list",["repetitive","instrumental","hypnotic","rhythmic","dense","atmospheric","lush","soothing"]],
+        ["Bagdadski Vor","Колхида",["Screamo","Midwest Emo"],"",["passionate","energetic","technical","dense","melancholic","melodic","atmospheric","uncommon time signatures"]],
+        ["Carly Rae Jepsen","Dedicated Side B",["Dance-Pop","Electropop"],"",["longing","romantic","melodic","love","warm","playful","rhythmic","summer"]],
+        ["King Gizzard & The Lizard Wizard","K.G.",["Psychedelic Rock","Progressive Rock"],"recurring artist — \"Butterfly 3000\" (2021, Best new discoveries) already on your list",["microtonal","psychedelic","hypnotic","uncommon time signatures","progressive","rhythmic","desert","surreal"]],
+        ["Satyr","Locus",["Swancore","Progressive Metal"],"",["energetic","uncommon time signatures","complex","progressive","technical","passionate","heavy","melodic"]],
+        ["Cartier'GOD","Cartier' in da House",["Deep House","Atmospheric Drum and Bass"],"recurring artist — \"Gold Fangz\" (2021, Worth a shot) already on your list",["rhythmic","atmospheric","sampling","sensual","surreal","party","nocturnal","sexual"]],
+        ["Momma","Two of Me",["Indie Rock","Slacker Rock"],"recurring artist — \"Welcome to My Blue Sky\" (2025, Worth a shot) already on your list",["melodic","deadpan"]],
+        ["米津玄師","Stray Sheep",["J-Pop","Alternative R&B"],"",["quirky","energetic","mellow","melodic","eclectic","melancholic","bittersweet","passionate"]],
+        ["万能青年旅店","冀西南林路行",["Art Rock","Progressive Rock"],"",["eclectic","nature","complex","progressive","concept album","lush","poetic","epic"]],
+        ["The Koreatown Oddity","Little Dominiques Nosebleed",["Jazz Rap","Conscious Hip Hop"],"",["humorous","concept album","introspective","playful","sampling","bittersweet","quirky","surreal"]],
+        ["井出ちよの","みんなの高校生活",["J-Pop","Art Pop"],"",["introspective","concept album","eclectic","melodic","playful","uplifting","energetic","dense"]],
+        ["Nation of Language","Introduction, Presence",["Synthpop","New Wave"],"your #26 most-played artist",["introspective","mellow","mechanical","calm","atmospheric","soothing","passionate","nocturnal"]]
+      ]
+    },
+    2021: {
+      "Confirmed favorites": [
+        ["ERRA","ERRA",["Melodic Metalcore","Progressive Metal"],"your #10 most-played artist",["technical","existential","melodic","progressive","futuristic","heavy","atmospheric","ethereal"]],
+        ["Men I Trust","Untourable Album",["Sophisti-Pop","Bedroom Pop"],"your #12 most-played artist",["atmospheric","mellow","calm","soothing","lonely","warm","nocturnal","hypnotic"]],
+        ["MIKE","\"Disco!\"",["Abstract Hip Hop","Experimental Hip Hop"],"recurring artist — \"Burning Desire\" (2023, Worth a shot) already on your list",["sampling","psychedelic","hypnotic","lo-fi","surreal","atmospheric","introspective","abstract"]],
+        ["Giant Claw","Mirror Guide",["Progressive Electronic","Epic Collage"],"your #41 most-played artist",["futuristic","progressive","avant-garde","epic","complex","chaotic","atmospheric","sparse"]],
+        ["sonhos tomam conta","Hypnagogia",["Shoegaze","Blackgaze"],"recurring artist — \"Maladaptive Daydreaming\" (2022, Worth a shot) already on your list",["melancholic","ethereal","nocturnal","depressive","suicide","lush","atmospheric","urban"]],
+        ["Wednesday","Twin Plagues",["Indie Rock","Shoegaze"],"recurring artist — \"Rat Saw God\" (2023, Best new discoveries) already on your list",["noisy","lethargic","raw","melancholic","playful","dissonant","sad","cold"]],
+        ["tricot","上出来",["Shimokita-kei","Math Pop"],"recurring artist — \"不出来\" (2022, Worth a shot) already on your list",["uncommon time signatures","technical","energetic","progressive","passionate","warm","melodic","rhythmic"]],
+        ["iANO","Dispossession",["HexD","Progressive Electronic"],"recurring artist — \"Life Cycles\" (2022, Worth a shot) already on your list",["progressive","ethereal","melodic","dense","lo-fi","melancholic","noisy","atmospheric"]],
+        ["underscores","Fishmonger",["Hyperpop","Indie Pop"],"recurring artist — \"Wallsocket\" (2023, Confirmed favorites) already on your list",["quirky","eclectic","bittersweet","melodic","energetic","rhythmic","playful","manic"]],
+        ["Spiritbox","Eternal Blue",["Alternative Metal","Djent"],"recurring artist — \"Tsunami Sea\" (2025, Best new discoveries) already on your list",["heavy","atmospheric","ethereal","melodic","rhythmic","passionate","technical","philosophical"]],
+        ["Wheel","Resident Human",["Progressive Metal","Progressive Rock"],"recurring artist — \"Charismatic Leaders\" (2024, Worth a shot) already on your list",["sombre","progressive","complex","heavy","introspective","dark","atmospheric","melodic"]]
+      ],
+      "Best new discoveries": [
+        ["Hail the Sun","New Age Filth",["Swancore","Post-Hardcore"],"recurring artist — \"Cut. Turn. Fade. Back.\" (2025, Worth a shot) already on your list",["energetic","passionate","technical","melodic","anxious","bittersweet"]],
+        ["Tinashe","333",["Alternative R&B","Pop Rap"],"recurring artist — \"BB/ANG3L\" (2023, Worth a shot) already on your list",["sexual","love","introspective","eclectic","sensual","melodic","rhythmic","warm"]],
+        ["Bruno Pernadas","Private Reasons",["Progressive Pop","Psychedelic Pop"],"recurring artist — \"unlikely, maybe\" (2026, Worth a shot) already on your list",["warm","lush","psychedelic","melodic","mellow","progressive","spring","uplifting"]],
+        ["Navy Blue","Navy's Reprise",["Conscious Hip Hop","Abstract Hip Hop"],"recurring artist — \"Ways of Knowing\" (2023, Worth a shot) already on your list",["mellow","introspective","conscious","sampling","abstract","lush","urban","rhythmic"]],
+        ["Silent Planet","Iridescent",["Metalcore","Djent"],"recurring artist — \"Superbloom\" (2023, Worth a shot) already on your list",["atmospheric","heavy","philosophical","political","apocalyptic","introspective","existential","aggressive"]],
+        ["yeule","Nuclear War Post X",["Ambient Pop","Indietronica"],"recurring artist — \"Softscars\" (2023, Worth a shot) already on your list",["melancholic","atmospheric","ethereal","soft","lonely","alienation","sad","nocturnal"]],
+        ["VOLA","Witness",["Djent","Progressive Metal"],"recurring artist — \"Friend of a Phantom\" (2024, Worth a shot) already on your list",["melodic","heavy","uncommon time signatures","introspective","uplifting","passionate","dense","rhythmic"]],
+        ["Glassing","Twin Dream",["Post-Metal","Atmospheric Sludge Metal"],"recurring artist — \"From the Other Side of the Mirror\" (2024, Worth a shot) already on your list",["atmospheric","depressive","epic","apocalyptic","energetic","passionate","heavy"]],
+        ["Feeble Little Horse","Hayday",["Noise Pop","Slacker Rock"],"recurring artist — \"Girl With Fish\" (2023, Worth a shot) already on your list",["noisy","energetic","bittersweet","psychedelic","deadpan","playful","melodic","lo-fi"]],
+        ["Deerhoof","Actually, You Can",["Noise Pop","Math Rock"],"recurring artist — \"Miracle-Level\" (2023, Worth a shot) already on your list",["noisy","energetic","quirky","technical","progressive","melodic","uncommon time signatures","chaotic"]],
+        ["sonhos tomam conta","Wierd",["Shoegaze","Emo"],"recurring artist — \"Maladaptive Daydreaming\" (2022, Worth a shot) already on your list",["lonely","anxious","self-hatred","depressive","LGBTQ","melancholic","suicide","atmospheric"]],
+        ["King Gizzard & The Lizard Wizard","Butterfly 3000",["Neo-Psychedelia","Psychedelic Pop"],"recurring artist — \"Changes\" (2022, Worth a shot) already on your list",["psychedelic","happy","melodic","warm","uplifting","summer","playful","lush"]],
+        ["The Mountain Goats","Dark in Here",["Indie Folk","Folk Rock"],"recurring artist — \"Days\" (2026, Worth a shot) already on your list",["melancholic","nocturnal","lonely","lush","warm","dark"]],
+        ["Slow Crush","Hush",["Shoegaze","Dream Pop"],"recurring artist — \"Thirst\" (2025, Worth a shot) already on your list",["atmospheric","mellow","nocturnal","mysterious","ethereal","melancholic","lonely","introspective"]]
+      ],
+      "Worth a shot": [
+        ["Between the Buried and Me","Colors II",["Progressive Metal","Metalcore"],"recurring artist — \"The Blue Nowhere\" (2025, Best new discoveries) already on your list",["progressive","eclectic","technical","complex","heavy","uncommon time signatures","suite","energetic"]],
+        ["Alfa Mist","Bring Backs",["Nu Jazz","Neo-Soul"],"recurring artist — \"Variables\" (2023, Worth a shot) already on your list",["mellow","improvisation","rhythmic","smooth","warm","melodic"]],
+        ["Patricia Taxxon","Yes, And",["Glitch Pop","Electronic Dance Music"],"recurring artist — \"Visiting Narcissa\" (2022, Worth a shot) already on your list",["uplifting","playful","complex","instrumental","futuristic","dense","rhythmic","lush"]],
+        ["Fire-Toolz","Eternal Home",["Post-Industrial","Progressive Electronic"],"recurring artist — \"Breeze\" (2024, Worth a shot) already on your list",["futuristic","eclectic","surreal","chaotic","complex","noisy","atmospheric","avant-garde"]],
+        ["nouns","Lonely Place of Dyin",["Post-Hardcore","Post-Rock"],"recurring artist — \"While of Unsound Mind\" (2022, Worth a shot) already on your list",["suicide","eclectic","lonely","angry","sampling","death","sentimental","manic"]],
+        ["Eidola","The Architect",["Swancore","Progressive Rock"],"recurring artist — \"Eviscerate\" (2024, Worth a shot) already on your list",["progressive","technical","passionate","uncommon time signatures","energetic","spiritual","existential","melodic"]],
+        ["leroy","Dariacore",["Dariacore","Trap [EDM]"],"recurring artist — \"Grave Robbing\" (2023, Worth a shot) already on your list",["sampling","chaotic","noisy","energetic","eclectic","quirky","manic","dense"]],
+        ["Hotline TNT","Nineteen in Love",["Shoegaze","Slacker Rock"],"recurring artist — \"Cartwheel\" (2023, Worth a shot) already on your list",["lo-fi","noisy","sentimental","dense","raw","warm","romantic"]],
+        ["Irreversible Entanglements","Open the Gates",["Jazz Poetry","Avant-Garde Jazz"],"recurring artist — \"Protect Your Light\" (2023, Worth a shot) already on your list",["political","improvisation","alienation","energetic","poetic","avant-garde","dark","cryptic"]],
+        ["Jane Remover","Teen Week",["Hyperpop","Digicore"],"recurring artist — \"Revengeseekerz\" (2025, Worth a shot) already on your list",["LGBTQ","depressive","noisy","self-hatred","eclectic","dense","melodic","melancholic"]],
+        ["Water From Your Eyes","Structure",["Art Pop","Post-Industrial"],"recurring artist — \"Everyone's Crushed\" (2023, Worth a shot) already on your list",["hypnotic","eclectic","cryptic","avant-garde","surreal","mechanical","poetic","bittersweet"]],
+        ["Magdalena Bay","Mercurial World",["Synthpop","Dance-Pop"],"recurring artist — \"Imaginal Disk\" (2024, Confirmed favorites) already on your list",["lush","melodic","ethereal","playful","energetic","sentimental","psychedelic","dense"]],
+        ["St. Vincent","Daddy's Home",["Psychedelic Soul","Art Rock"],"recurring artist — \"All Born Screaming\" (2024, Worth a shot) already on your list",["psychedelic","urban","warm","lush","eclectic","quirky","introspective","passionate"]],
+        ["Millennium Parade","The Millennium Parade",["Art Pop","Pop Rap"],"",["lush","nocturnal","atmospheric","bittersweet","rhythmic","melodic","urban","energetic"]],
+        ["R.A.P. Ferreira","The Light Emitting Diamond Cutter Scriptures",["Abstract Hip Hop","Jazz Rap"],"recurring artist — \"The Night Green Side of It\" (2025, Worth a shot) already on your list",["abstract","mellow","poetic","rhythmic","calm","sampling","warm","conscious"]],
+        ["Moor Mother","Black Encyclopedia of the Air",["Abstract Hip Hop","Experimental Hip Hop"],"recurring artist — \"Jazz Codes\" (2022, Worth a shot) already on your list",["avant-garde","cryptic","conscious","philosophical","mellow","atmospheric","futuristic","poetic"]],
+        ["saoirse dream","everything✱",["Hyperpop","Drum and Bass"],"recurring artist — \"star★☆\" (2022, Worth a shot) already on your list",["sampling","repetitive","rhythmic","breakup","melodic","self-hatred","eclectic","melancholic"]],
+        ["Asian Glow","Downfall of the Neon Youth",["Shoegaze","Emo"],"",["noisy","nocturnal","urban","atmospheric","melancholic","sentimental","depressive","ethereal"]],
+        ["Sweet Trip","A Tiny House, in Secret Speeches, Polar Equals",["Dream Pop","Indietronica"],"",["lush","ethereal","dense","warm","atmospheric","love","melodic","psychedelic"]],
+        ["Cartier'GOD","Gold Fangz",["Hypnagogic Pop","Post-Punk"],"",["hypnotic","atmospheric","surreal","nocturnal","psychedelic","dark","fantasy","eclectic"]],
+        ["Vijay Iyer","Uneasy",["Avant-Garde Jazz","Neo-Bop"],"recurring artist — \"Compassion\" (2024, Worth a shot) already on your list",["instrumental","acoustic","warm","complex","improvisation","atmospheric","mysterious","calm"]],
+        ["quickly, quickly","The Long and Short of It",["Alternative R&B","Art Pop"],"",["lush","rhythmic","psychedelic","warm","uncommon time signatures","atmospheric","melancholic","breakup"]],
+        ["James Blake","Friends That Break Your Heart",["Alternative R&B","Ambient Pop"],"recurring artist — \"Playing Robots Into Heaven\" (2023, Worth a shot) already on your list",["introspective","longing","atmospheric","sentimental","melancholic","love","mellow","breakup"]],
+        ["betcover!!","時間",["Art Rock","Alternative Rock"],"recurring artist — \"卵\" (2022, Worth a shot) already on your list",["eclectic","noisy","melancholic","anxious","atmospheric","abstract","uncommon time signatures","progressive"]],
+        ["Blu","The Color Blu(e)",["Boom Bap","Conscious Hip Hop"],"recurring artist — \"Forty\" (2025, Worth a shot) already on your list",["sampling","concept album","urban","lush","introspective","political","conscious","rhythmic"]],
+        ["Aesop Rock","Garbology",["Abstract Hip Hop","Boom Bap"],"recurring artist — \"Integrated Tech Solutions\" (2023, Worth a shot) already on your list",["playful","eclectic","rhythmic","sampling","abstract","philosophical","poetic","quirky"]],
+        ["折坂悠太","心理",["Art Rock","Jazz Fusion"],"",["bittersweet","lush","introspective","melodic","passionate","eclectic","melancholic","energetic"]],
+        ["The World Is a Beautiful Place & I Am No Longer Afraid to Die","Illusory Walls",["Post-Rock","Midwest Emo"],"",["progressive","bittersweet","melancholic","melodic","death","existential","atmospheric","epic"]],
+        ["King Gizzard & The Lizard Wizard","L.W.",["Psychedelic Rock","Heavy Psych"],"recurring artist — \"Changes\" (2022, Worth a shot) already on your list",["microtonal","psychedelic","uncommon time signatures","rhythmic","hypnotic","energetic","heavy","surreal"]],
+        ["Full of Hell","Garden of Burning Apparitions",["Deathgrind","Power Electronics"],"recurring artist — \"When No Birds Sang\" (2023, Best new discoveries) already on your list",["chaotic","noisy","aggressive","heavy","antireligious","apocalyptic","death","dissonant"]],
+        ["Genesis Owusu","Smiling With No Teeth",["Neo-Soul","Funk"],"recurring artist — \"Struggler\" (2023, Worth a shot) already on your list",["eclectic","conscious","rhythmic","playful","energetic","introspective","quirky","political"]],
+        ["Newgrounds Death Rugby","Pictures of Your Pets",["Midwest Emo","Post-Hardcore"],"",["passionate","introspective","melancholic","energetic","sampling","sentimental","quirky","melodic"]],
+        ["DIM","Compendium Reliquiae",["Dungeon Synth","Neo-Medieval Folk"],"recurring artist — \"Planted in the Soil\" (2024, Worth a shot) already on your list",["medieval","atmospheric","instrumental","peaceful","melodic","repetitive","lush","calm"]],
+        ["Emily Steinwall","Welcome to the Garden",["Progressive Pop","Art Rock"],"",["lush","warm","melodic","eclectic","love","passionate","progressive","poetic"]],
+        ["DIM","The Holy Crag",["Dungeon Synth","Neoclassical New Age"],"recurring artist — \"Planted in the Soil\" (2024, Worth a shot) already on your list",["mysterious","soothing","medieval","melancholic","winter","lush","atmospheric","instrumental"]],
+        ["Kendall, 3","Dirt",["Art Pop","Glitch Pop"],"",["sentimental","anxious","bittersweet","chaotic","futuristic","lush","eclectic","nature"]],
+        ["SeeYouSpaceCowboy","The Romance of Affliction",["Metalcore","Post-Hardcore"],"",["introspective","passionate","love","angry","chaotic","aggressive","heavy","melodic"]],
+        ["Makthaverskan","För Allting",["Post-Punk","Dream Pop"],"",["melancholic","longing","passionate","existential","breakup","love"]],
+        ["Billie Eilish","Happier Than Ever",["Alt-Pop","Contemporary R&B"],"",["introspective","melancholic","mellow","eclectic","minimalistic","breakup","sensual","lonely"]],
+        ["webcage","Peer2Peer",["Hyperpop","Alternative Rock"],"",["passionate","quirky","energetic","LGBTQ","eclectic","internet","rhythmic","introspective"]],
+        ["Spirit of the Beehive","Entertainment, Death",["Neo-Psychedelia","Noise Pop"],"",["psychedelic","surreal","chaotic","dense","sampling","drugs","hypnotic","progressive"]],
+        ["Tyler, The Creator","Call Me If You Get Lost",["Hip Hop","Neo-Soul"],"recurring artist — \"Chromakopia\" (2024, Confirmed favorites) already on your list",["boastful","warm","hedonism","sampling","summer","lush","rhythmic","eclectic"]],
+        ["Parannoul","To See the Next Part of the Dream",["Shoegaze","Emo"],"",["noisy","melancholic","raw","self-hatred","introspective","depressive","alienation","atmospheric"]],
+        ["Remi Wolf","Juno",["Contemporary R&B","Indie Pop"],"",["quirky","playful","humorous","melodic","eclectic","sexual","uplifting","love"]],
+        ["Dean Blunt","Black Metal 2",["Art Pop","Neo-Psychedelia"],"",["lonely","lethargic","deadpan","nocturnal","lush","atmospheric","psychedelic","mysterious"]],
+        ["Wolf Alice","Blue Weekend",["Alternative Rock","Dream Pop"],"",["nocturnal","atmospheric","ethereal","lush","melancholic","melodic","longing","introspective"]],
+        ["Mastodon","Hushed and Grim",["Progressive Metal","Progressive Rock"],"",["melancholic","heavy","dark","melodic","passionate","technical","energetic","death"]],
+        ["Sega Bodega","Romeo",["Alternative R&B","Electronic"],"",["love","eclectic","atmospheric","sentimental","ethereal","melancholic","sensual","breakup"]],
+        ["Dwaal Troupe","Lucky Dog",["Slacker Rock","Power Pop"],"",["noisy","melancholic","bittersweet","melodic","raw","lo-fi","warm","autumn"]],
+        ["Low Roar","Maybe Tomorrow...",["Ambient Pop","Post-Rock"],"",["atmospheric","calm","sparse","lush","soft","bittersweet","psychedelic","poetic"]],
+        ["downt","Downt",["Midwest Emo","Post-Rock"],"",["melodic","melancholic","anxious","atmospheric","longing","bittersweet","breakup","nostalgia"]],
+        ["CA7RIEL","EL DISKO",["Alternative R&B","Neo-Soul"],"",["eclectic","abstract","rhythmic","nocturnal","hedonism","drugs","lush","quirky"]],
+        ["Moin","Moot!",["Experimental Rock","Post-Rock"],"",["repetitive","anxious","sampling","psychedelic","hypnotic","avant-garde","ominous","dark"]],
+        ["The Marías","Cinema",["Alt-Pop","Synthpop"],"",["sensual","soft","lush","atmospheric","ethereal","nocturnal","smooth","mellow"]],
+        ["Mega Bog","Life, and Another",["Art Pop","Sophisti-Pop"],"",["eclectic","progressive","poetic","atmospheric","mellow","calm","melodic","complex"]]
+      ]
+    },
+    2022: {
+      "Confirmed favorites": [
+        ["Louis Cole","Quality Over Opinion",["Jazz Fusion","Synth Funk"],"your #1 most-played artist",["quirky","rhythmic","humorous","eclectic","melodic","playful","lush","introspective"]],
+        ["Northlane","Obsidian",["Djent","Metalcore"],"named directly in your core metal taste cluster",["mechanical","futuristic","heavy","atmospheric","passionate","nocturnal","introspective","melodic"]],
+        ["Fleshwater","We're Not Here to Be Loved",["Alternative Metal","Shoegaze"],"recurring artist — their 2024 album is already a Best discovery",["heavy","melodic","melancholic","atmospheric","energetic","dense","passionate","anxious"]],
+        ["billy woods","Aethiopes",["Abstract Hip Hop","Experimental Hip Hop"],"recurring artist — \"Maps\" is a confirmed 2023 favorite",["ominous","dark","cryptic","avant-garde","poetic","history","abstract","serious"]],
+        ["Rolo Tomassi","Where Myth Becomes Memory",["Post-Metal","Metalcore"],"metalcore + dream pop + prog metal, your signature crossover",["ethereal","heavy","atmospheric","eclectic","progressive","sentimental","passionate","melancholic"]],
+        ["Thornhill","Heroine",["Alternative Metal","Shoegaze"],"recurring artist — \"Bodies\" is a confirmed 2025 Best discovery",["ethereal","atmospheric","melodic","melancholic","passionate","heavy","nocturnal","rhythmic"]],
+        ["Kardashev","Liminal Rite",["Post-Metal","Deathcore"],"recurring artist — \"Alunea\" already on your 2024 list",["atmospheric","heavy","mysterious","existential","complex","progressive","poetic","introspective"]],
+        ["The Weeknd","Dawn FM",["Synthpop","Synthwave"],"ties directly to your noted Tomoko Aran / city-pop-revival connection",["concept album","love","death","nocturnal","futuristic","sensual","bittersweet","party"]],
+        ["Black Country, New Road","Ants From Up There",["Art Rock","Post-Rock"],"highest-rated album on this list (4.04), progressive/lush/melancholic",["longing","melancholic","passionate","lush","sentimental","love","bittersweet","poetic"]],
+        ["Charlie Griffiths","Tiktaalika",["Progressive Metal","Djent"],"technical prog-metal guitar, Plini/Jakub Zytecki lane",["uncommon time signatures","complex","progressive","history","rhythmic","eclectic","playful","concept album"]],
+        ["Ezra Collective","Where I'm Meant to Be",["Jazz Fusion","Jazz-Funk"],"recurring artist — \"Dance, No One's Watching\" already on your 2024 list",["rhythmic","peaceful","energetic","uplifting","atmospheric","warm","love","passionate"]]
+      ],
+      "Best new discoveries": [
+        ["Alvvays","Blue Rev",["Shoegaze","Dream Pop"],"",["melodic","bittersweet","noisy","dense","ethereal","longing","warm","psychedelic"]],
+        ["Beach House","Once Twice Melody",["Dream Pop","Neo-Psychedelia"],"",["ethereal","lush","romantic","atmospheric","love","dense","hypnotic","bittersweet"]],
+        ["Ethel Cain","Preacher's Daughter",["Dream Pop","Slowcore"],"",["concept album","atmospheric","pastoral","melancholic","ethereal","death","Christian","dark"]],
+        ["Static Dress","Rouge Carpet Disaster",["Post-Hardcore","Metalcore"],"",["passionate","melancholic","energetic","dense","aggressive","introspective","concept album","atmospheric"]],
+        ["Sylvaine","Nova",["Blackgaze","Post-Metal"],"",["ethereal","longing","introspective","atmospheric","passionate","lush","harsh vocals","melodic"]],
+        ["Gillian Carter","Salvation Through Misery",["Emoviolence","Screamo"],"",["melancholic","dark","angry","nihilistic","depressive","noisy","passionate","heavy"]],
+        ["The Comet Is Coming","Hyper-Dimensional Expansion Beam",["Nu Jazz","Jazz Fusion"],"",["instrumental","psychedelic","futuristic","space","atmospheric","rhythmic","technical","hypnotic"]],
+        ["Sudan Archives","Natural Brown Prom Queen",["Alternative R&B","Art Pop"],"",["eclectic","sexual","psychedelic","sensual","progressive","rhythmic","hedonism","atmospheric"]],
+        ["Devin Townsend","Lightwork",["Progressive Rock","Progressive Metal"],"",["ethereal","atmospheric","passionate","melodic","Wall of Sound","eclectic","complex","uplifting"]],
+        ["Cave In","Heavy Pendulum",["Alternative Metal","Progressive Metal"],"",["heavy","atmospheric","progressive","energetic","political","melodic","space","rhythmic"]],
+        ["Greyhaven","This Bright and Beautiful World",["Metalcore","Post-Hardcore"],"recurring artist — \"Keep It Quiet\" already on your 2025 list",["heavy","rhythmic","energetic","aggressive","melodic","dissonant","dense"]],
+        ["The Callous Daoboys","Celebrity Therapist",["Mathcore","Post-Hardcore"],"recurring artist — their 2025 album already on your list",["chaotic","technical","dissonant","uncommon time signatures","manic","quirky","dense","heavy"]],
+        ["Darko","Oni",["Deathcore","Metalcore"],"recurring artist — \"Oni 2\" already on your 2026 list",["futuristic","heavy","dense","rhythmic","energetic","aggressive","harsh vocals","introspective"]],
+        ["Shygirl","Nymph",["Alternative R&B","Future Garage"],"recurring artist — the deluxe \"Nymph_o\" already on your 2023 list",["sexual","nocturnal","urban","atmospheric","longing","sensual","cold","mellow"]]
+      ],
+      "Worth a shot": [
+        ["iANO","Life Cycles",["Electronic","Art Pop"],"",["atmospheric","melancholic","surreal","longing","ethereal","progressive","eclectic","melodic"]],
+        ["Plenamente","Interminable",["Shoegaze","Noise Rock"],"",["melancholic","atmospheric","ethereal","lo-fi","surreal","energetic","dense","noisy"]],
+        ["what is your name?","The Now Now and Never",["Post-Rock","Indie Rock"],"",["sampling","sentimental","psychedelic","atmospheric","bittersweet","instrumental","lo-fi","melancholic"]],
+        ["Willy Rodriguez","Terminal Lucidity",["Slacker Rock","Rock Opera"],"",["raw","lo-fi","depressive","passionate","noisy","energetic","rhythmic","melodic"]],
+        ["postcard nowhere","Juvenilia",["Slacker Rock","Slowcore"],"",["longing","melancholic","depressive","eclectic","apocalyptic","warm","dark","noisy"]],
+        ["Djo","Decide",["Synthpop","Neo-Psychedelia"],"",["psychedelic","playful","eclectic","rhythmic","quirky","introspective","nocturnal","melodic"]],
+        ["Madison Cunningham","Revealer",["Singer-Songwriter","Art Rock"],"",["uncommon time signatures","progressive","melodic","eclectic","sentimental","rhythmic","warm","psychedelic"]],
+        ["Teen Suicide","Honeybee Table at the Butterfly Feast",["Slacker Rock","Indie Folk"],"",["bittersweet","lo-fi","eclectic","atmospheric","sentimental","lush","death","depressive"]],
+        ["They Are Gutting a Body of Water","Lucky Styles",["Shoegaze","Noise Pop"],"",["noisy","sampling","psychedelic","cryptic","surreal","heavy","dense","warm"]],
+        ["Pudding Club","Songs Before Bed (2022)",["Indietronica","Ambient"],"",["warm","soothing","nocturnal","atmospheric","instrumental","mellow","playful","peaceful"]],
+        ["Marmalade butcher","Onomatomani[a]kus",["Math Rock","Shimokita-kei"],"",["instrumental","energetic","complex","technical","melodic","uplifting","uncommon time signatures","progressive"]],
+        ["brakence","Hypochondriac",["Glitch Pop","Emo Rap"],"",["introspective","existential","progressive","melancholic","complex","depressive","eclectic","LGBTQ"]],
+        ["For Tracy Hyde","Hotel Insomnia",["Shoegaze","Dream Pop"],"",["ethereal","melodic","atmospheric","energetic","lush","warm","rhythmic","psychedelic"]],
+        ["Soccer Mommy","Sometimes, Forever",["Indie Rock","Neo-Psychedelia"],"",["melancholic","lush","eclectic","melodic","sentimental","romantic","bittersweet","atmospheric"]],
+        ["Jean Dawson","CHAOS NOW*",["Indie Rock","Alternative Rock"],"",["eclectic","energetic","melodic","triumphant","rebellious","warm","bittersweet","introspective"]],
+        ["tricot","不出来",["Shimokita-kei","Math Rock"],"",["energetic","technical","eclectic","uncommon time signatures","noisy","quirky","passionate","playful"]],
+        ["saoirse dream","star★☆",["Hyperpop","Indietronica"],"",["melancholic","energetic","anthemic","melodic","bittersweet","playful","LGBTQ","quirky"]],
+        ["betcover!!","卵",["Art Rock","Progressive Rock"],"",["eclectic","progressive","complex","melodic","atmospheric","passionate","abstract","melancholic"]],
+        ["Niños del Cerro","Suave pendiente",["Neo-Psychedelia","Indie Rock"],"",["ethereal","mellow","psychedelic","sentimental","dense","soothing","bittersweet","lush"]],
+        ["Alex G","God Save the Animals",["Indie Rock","Indie Folk"],"",["eclectic","cryptic","psychedelic","Christian","religious","melodic","sentimental","introspective"]],
+        ["Moor Mother","Jazz Codes",["Experimental Hip Hop","Abstract Hip Hop"],"",["surreal","conscious","mellow","serious","protest","cryptic","avant-garde","lush"]],
+        ["sonhos tomam conta","Maladaptive Daydreaming",["Shoegaze","Emo"],"",["atmospheric","ethereal","melancholic","alienation","lush","introspective","noisy","hypnotic"]],
+        ["Patricia Taxxon","Visiting Narcissa",["IDM","Ambient"],"",["concept album","progressive","instrumental","rhythmic","futuristic","playful","complex","atmospheric"]],
+        ["Pool Kids","Pool Kids",["Emo-Pop","Math Rock"],"",["nocturnal","ethereal","lush","energetic","anthemic","breakup","melodic","bittersweet"]],
+        ["Frost Children","Spiral",["Hyperpop","Emo-Pop"],"",["eclectic","energetic","LGBTQ","playful","sampling","lonely","futuristic","existential"]],
+        ["Anxious","Little Green House",["Emo","Emo-Pop"],"",["anxious","melodic","energetic","summer","bittersweet","passionate","breakup","longing"]],
+        ["Greg Freeman","I Looked Out",["Alt-Country","Indie Rock"],"",["passionate","longing","introspective","melancholic","energetic","pastoral","anxious","bittersweet"]],
+        ["明日の叙景","アイランド",["Blackgaze","Post-Hardcore"],"",["summer","passionate","energetic","warm","bittersweet","melodic","uplifting","triumphant"]],
+        ["Armand Hammer","WHT LBL",["Abstract Hip Hop","Drumless"],"",["sampling","abstract","poetic","raw","dark","deadpan","urban","pessimistic"]],
+        ["Hatchie","Giving the World Away",["Dream Pop","Alternative Dance"],"",["lush","longing","love","ethereal","psychedelic","melodic","romantic","rhythmic"]],
+        ["nouns","While of Unsound Mind",["Experimental Rock","Noise Rock"],"",["manic","passionate","chaotic","noisy","eclectic","raw","dissonant","sampling"]],
+        ["Della Zyr","비타민과 우려 Vitamins and Apprehension",["Dream Pop","Shoegaze"],"",["melancholic","lush","longing","concept album","sentimental","atmospheric","ethereal","bittersweet"]],
+        ["Cheekface","Too Much to Ask",["Geek Rock","Indie Rock"],"",["playful","deadpan","humorous","melodic","energetic","pessimistic","sarcastic","anthemic"]],
+        ["Luna Li","Duality",["Psychedelic Pop","Indie Pop"],"",["lush","mellow","soft","warm","psychedelic","ethereal","bittersweet","melancholic"]],
+        ["Toro y Moi","MAHAL",["Neo-Psychedelia","Psychedelic Soul"],"",["psychedelic","warm","playful","summer","quirky","mellow","ethereal","atmospheric"]],
+        ["Jockstrap","I Love You Jennifer B",["Art Pop","Glitch Pop"],"",["eclectic","surreal","sexual","quirky","playful","progressive","lush","atmospheric"]],
+        ["Fontaines D.C.","Skinty Fia",["Post-Punk","Gothic Rock"],"",["dark","atmospheric","melancholic","political","pessimistic","poetic","serious","rhythmic"]],
+        ["The Smile","A Light for Attracting Attention",["Art Rock","Post-Punk"],"",["uncommon time signatures","mysterious","atmospheric","eclectic","melancholic","abstract","ominous","lush"]],
+        ["King Gizzard & The Lizard Wizard","Changes",["Psychedelic Pop","Progressive Pop"],"",["psychedelic","playful","melodic","rhythmic","warm","progressive","quirky","mellow"]],
+        ["A.A. Williams","As the Moon Rests",["Doomgaze","Post-Rock"],"",["introspective","dark","sentimental","dense","longing","bittersweet","atmospheric"]],
+        ["Perfume","PLASMA",["J-Pop","Electropop"],"",["futuristic","melodic","anthemic","lush","energetic","rhythmic","love","mellow"]],
+        ["quannnic","Kenopsia",["Indietronica","Shoegaze"],"",["noisy","dense","melancholic","lobit","lo-fi","mysterious","death","atmospheric"]],
+        ["Beth Orton","Weather Alive",["Art Pop","Singer-Songwriter"],"",["atmospheric","soft","melancholic","lush","soothing","sentimental","introspective","passionate"]],
+        ["DPR IAN","Moodswings in to Order",["Alternative R&B","Alt-Pop"],"",["nocturnal","melancholic","melodic","atmospheric","drugs","lethargic","introspective"]],
+        ["Bad Omens","The Death of Peace of Mind",["Alternative Metal","Alternative Rock"],"",["dark","aggressive","sexual","futuristic","melodic","love","bittersweet","angry"]],
+        ["Big Thief","Dragon New Warm Mountain I Believe in You",["Indie Folk","Folk Rock"],"",["eclectic","pastoral","soothing","bittersweet","peaceful","love","poetic","longing"]],
+        ["Bladee","Crest",["Synthpop","Art Pop"],"",["ethereal","spiritual","soft","uplifting","love","atmospheric","lush","religious"]],
+        ["Gospel","The Loser",["Post-Hardcore","Progressive Rock"],"",["manic","progressive","complex","heavy","aggressive","energetic","technical","uncommon time signatures"]],
+        ["Nilüfer Yanya","PAINLESS",["Indie Rock","Art Rock"],"",["warm","hypnotic","rhythmic","eclectic","bittersweet","longing","lush","melodic"]],
+        ["Kilo Kish","American Gurl",["Electropop","Alternative Dance"],"",["playful","rhythmic","introspective","conscious","melodic","surreal","quirky","political"]],
+        ["billy woods","Church",["Abstract Hip Hop","Experimental Hip Hop"],"",["sampling","poetic","introspective","atmospheric","sombre","crime","drugs","serious"]],
+        ["Sadness","Tortuga",["Blackgaze","Shoegaze"],"",["love","atmospheric","ethereal","warm","romantic","passionate","poetic","nocturnal"]],
+        ["City of Caterpillar","Mystic Sisters",["Post-Hardcore","Post-Rock"],"",["dark","sombre","ominous","anxious","aggressive","atmospheric","nihilistic","raw"]],
+        ["Xênia França","Em nome da estrela",["Contemporary R&B","MPB"],"",["futuristic","rhythmic","peaceful","calm","introspective","psychedelic","melodic","lush"]],
+        ["Binker and Moses","Feeding the Machine",["Avant-Garde Jazz","Post-Bop"],"",["hypnotic","instrumental","avant-garde","ethereal","suspenseful","atmospheric","warm","soothing"]]
+      ]
+    },
+    2023: {
+      "Confirmed favorites": [
+        ["KNOWER","Knower Forever",["Synth Funk","Jazz-Funk"],"",["rhythmic","technical","quirky","progressive","energetic","playful","complex","humorous"]],
+        ["Nourished by Time","Erotic Probiotic 2",["Alternative R&B","Bedroom Pop"],"",["introspective","melodic","rhythmic","lush","quirky","psychedelic","love","warm"]],
+        ["PinkPantheress","Heaven Knows",["Contemporary R&B","Alt-Pop"],"",["atmospheric","ethereal","lush","romantic","bittersweet","introspective","rhythmic","sentimental"]],
+        ["underscores","Wallsocket",["Indietronica","New Rave"],"one of 2023's most acclaimed albums",["concept album","eclectic","crime","LGBTQ","energetic","conscious","quirky","playful"]],
+        ["Slayyyter","Starfucker",["Dance-Pop","Electropop"],"",["vulgar","party","sensual","nocturnal","sexual","love","drugs","hedonism"]],
+        ["death's dynamic shroud","Midnight Tangerine",["Synthpop","Art Pop"],"three albums this year — also After Angel, Keys to the Gate",["psychedelic","atmospheric","lush","ethereal","bittersweet","melodic","introspective","complex"]],
+        ["Namitape","Flitter",["Chillwave","Chillsynth"],"",["urban","pitched-up vocals","rhythmic","anxious","alienation","lush"]],
+        ["Bobbing","Year of the Newt",["Indietronica","Funktronica"],"",["warm","playful","technical","quirky","melodic","eclectic","happy","rhythmic"]],
+        ["Periphery","Periphery V: Djent Is Not a Genre",["Djent","Progressive Metal"],"",["heavy","aggressive","progressive","technical","passionate","melodic","uncommon time signatures","energetic"]],
+        ["Ok Goodnight","The Fox and the Bird",["Progressive Rock","Progressive Metal"],"",["concept album","melodic","lush","folklore","heavy","suspenseful","introspective","eclectic"]]
+      ],
+      "Best new discoveries": [
+        ["Royal Philharmonic Orchestra","A Symphonic Celebration: Music From the Studio Ghibli Films of Hayao Miyazaki",["Cinematic Classical","Choral"],"literal orchestral film/game score music — direct Yoko Shimomura lane",["acoustic","melancholic","soft","mellow","melodic","orchestral","instrumental","calm"]],
+        ["Slowdive","Everything Is Alive",["Dream Pop","Shoegaze"],"shoegaze royalty, dead-center your core",["mellow","ethereal","atmospheric","bittersweet","psychedelic","lush","hypnotic","melodic"]],
+        ["Sigur Rós","ÁTTA",["Ambient","Modern Classical"],"another classical-interest tie",["atmospheric","ethereal","orchestral","lush","bittersweet","melancholic","spring","meditative"]],
+        ["billy woods & Kenny Segal","Maps",["Abstract Hip Hop","Jazz Rap"],"the acclaimed one from a recurring artist",["melancholic","poetic","deadpan","introspective","sampling","atmospheric","concept album","cryptic"]],
+        ["Wednesday","Rat Saw God",["Indie Rock","Alt-Country"],"indie/shoegaze crossover, major 2023 album",["noisy","drugs","raw","melancholic","passionate","heavy","dense","introspective"]],
+        ["100 gecs","10,000 gecs",["Alternative Rock","Hyperpop"],"",["humorous","quirky","playful","eclectic","noisy","energetic","manic","sampling"]],
+        ["Chappell Roan","The Rise and Fall of a Midwest Princess",["Dance-Pop","Synthpop"],"",["lesbian","sexual","playful","love","LGBTQ","romantic","party","passionate"]],
+        ["Full of Hell","When No Birds Sang",["Atmospheric Sludge Metal","Shoegaze"],"same sludge/shoegaze crossover as Deftones/Turnstile",["atmospheric","ominous","heavy","dense","melancholic","noisy","cryptic","dark"]]
+      ],
+      "Worth a shot": [
+        ["Genesis Owusu","Struggler",["Post-Punk Revival","Funk"],"",["concept album","eclectic","playful","energetic","rhythmic","introspective","conscious","uplifting"]],
+        ["leroy","Grave Robbing",["Hard Dance","Dariacore"],"",["sampling","energetic","party","rhythmic","dense","manic","progressive","chaotic"]],
+        ["Caroline Polachek","Desire, I Want to Turn Into You",["Art Pop","Alt-Pop"],"",["eclectic","warm","love","tropical","lush","melodic","summer","passionate"]],
+        ["JPEGMAFIA","Scaring the Hoes",["Experimental Hip Hop","Hardcore Hip Hop"],"",["chaotic","sampling","noisy","energetic","eclectic","dense","raw","playful"]],
+        ["Earl Sweatshirt","Voir Dire",["Abstract Hip Hop","Drumless"],"",["sampling","mellow","introspective","poetic","abstract","deadpan","nocturnal","atmospheric"]],
+        ["MIKE","Burning Desire",["Abstract Hip Hop","Jazz Rap"],"",["poetic","sampling","introspective","warm","sentimental","psychedelic","abstract","atmospheric"]],
+        ["MIKE","Faith Is a Rock",["Abstract Hip Hop","Jazz Rap"],"",["sampling","mellow","urban","introspective","lush","conscious","anxious","atmospheric"]],
+        ["Armand Hammer","We Buy Diabetic Test Strips",["Experimental Hip Hop","Abstract Hip Hop"],"",["avant-garde","abstract","surreal","atmospheric","conscious","dark","urban","eclectic"]],
+        ["Aesop Rock","Integrated Tech Solutions",["Abstract Hip Hop","Conscious Hip Hop"],"",["futuristic","concept album","playful","philosophical","quirky","conscious","rhythmic","humorous"]],
+        ["Navy Blue","Ways of Knowing",["Conscious Hip Hop","Jazz Rap"],"",["introspective","sampling","mellow","conscious","lush","death","warm","poetic"]],
+        ["Alfa Mist","Variables",["Jazz Fusion","Nu Jazz"],"",["meditative","atmospheric","soft","philosophical","peaceful","improvisation","psychedelic","complex"]],
+        ["Irreversible Entanglements","Protect Your Light",["Avant-Garde Jazz","Jazz Poetry"],"",["spiritual","passionate","poetic","avant-garde","energetic","conscious","political","rhythmic"]],
+        ["Alabaster DePlume","Come With Fierce Grace",["Spiritual Jazz","Chamber Jazz"],"",["instrumental","meditative","improvisation","ethereal","rhythmic","mellow","melancholic","warm"]],
+        ["Panda Bear","Reset in Dub",["Dub","Neo-Psychedelia"],"",["hypnotic","mellow","repetitive","rhythmic","psychedelic","uplifting","calm","melodic"]],
+        ["Feeble Little Horse","Girl With Fish",["Noise Pop","Slacker Rock"],"",["noisy","lo-fi","melodic","deadpan","quirky","introspective","apathetic","sarcastic"]],
+        ["Hotline TNT","Cartwheel",["Slacker Rock","Shoegaze"],"",["energetic","warm","melancholic","ethereal","longing","melodic","dense","noisy"]],
+        ["Invent Animate","Heavener",["Metalcore","Djent"],"",["heavy","technical","dense","atmospheric","uncommon time signatures","passionate","ethereal","dissonant"]],
+        ["The Hirsch Effekt","Urian",["Progressive Metal","Mathcore"],"",["manic","uncommon time signatures","melodic","atmospheric","progressive","technical","chugging","complex"]],
+        ["Narrow Head","Moments of Clarity",["Alternative Rock","Shoegaze"],"",["passionate","longing","dense","melancholic","energetic","heavy","melodic","atmospheric"]],
+        ["Vyva Melinkolya","Unbecoming",["Slowcore","Shoegaze"],"",["hypnotic","melancholic","atmospheric","noisy","dark","nocturnal","dense","lethargic"]],
+        ["bar italia","Tracey Denim",["Slacker Rock","Post-Punk"],"",["bittersweet","melancholic","urban","longing","lethargic","breakup","dark","melodic"]],
+        ["Jeromes Dream","The Gray in Between",["Screamo","Noise Rock"],"",["noisy","heavy","dissonant","manic","aggressive","anxious","melancholic","passionate"]],
+        ["i.o","When the Dandelions No Longer Grow",["Experimental Rock","Emo"],"",["surreal","chaotic","atmospheric","avant-garde","improvisation","poetic","free rhythm","depressive"]],
+        ["Cady","Forged From the Sun",["Emoviolence","Metalcore"],"",["chaotic","angry","dense","passionate","dark","heavy","aggressive","noisy"]],
+        ["Noverte","Con uno sguardo solo",["Screamo"],"",["bittersweet","melancholic","aggressive","energetic","anxious","ominous","rhythmic","poetic"]],
+        ["Killing Me Softly","Autumn Lost in Silence",["Metalcore","Melodic Metalcore"],"",["raw","heavy","noisy","aggressive","passionate","melodic","energetic","autumn"]],
+        ["Loma Prieta","Last",["Screamo"],"",["passionate","anxious","melancholic","noisy","raw","bittersweet","alienation","existential"]],
+        ["onewaymirror","onewaymirror",["Emoviolence","Screamo"],"",["dark","noisy","lo-fi","raw","chaotic","energetic","dissonant","lonely"]],
+        ["moshimoshi","Green LP",["Math Rock","Midwest Emo"],"",["energetic","technical","melodic","passionate","anxious"]],
+        ["Currents","The Death We Seek",["Metalcore","Djent"],"",["existential","apocalyptic","heavy","energetic","pessimistic","technical","serious","melancholic"]],
+        ["Silent Planet","Superbloom",["Metalcore","Alternative Metal"],"",["heavy","futuristic","atmospheric","angry","technical","dissonant","science fiction","rhythmic"]],
+        ["Polaris","Fatalism",["Metalcore","Alternative Metal"],"",["energetic","heavy","dark","cold","nocturnal","pessimistic","atmospheric","harsh vocals"]],
+        ["Unearth","The Wretched; The Ruinous",["Melodic Metalcore"],"",["antireligious","aggressive","energetic","chaotic","dense","rhythmic","technical","melodic"]],
+        ["EYES","Congratulations",["Metalcore","Noise Rock"],"",["heavy","angry","aggressive","noisy","rhythmic","raw","pessimistic","manic"]],
+        ["Jesus Piece","...So Unknown",["Metalcore","Deathcore"],"",["heavy","aggressive","rhythmic","dark","anxious","angry","antireligious","chaotic"]],
+        ["Year of the Knife","No Love Lost",["Metalcore","Death Metal"],"",["aggressive","angry","heavy","raw","antireligious","harsh vocals","protest","chugging"]],
+        ["Pain of Truth","Not Through Blood",["Beatdown Hardcore","Metalcore"],"",["angry","aggressive","violence","heavy","political","energetic","hateful","urban"]],
+        ["Yussef Dayes","Black Classical Music",["Jazz Fusion","Spiritual Jazz"],"",["passionate","rhythmic","calm","improvisation","sensual","warm","uplifting","summer"]],
+        ["London Brew","London Brew",["Jazz Fusion","Avant-Garde Jazz"],"",["instrumental","technical","complex","chaotic","avant-garde","concept album","epic","lush"]],
+        ["Matthew Halsall","An Ever Changing View",["Spiritual Jazz"],"",["nature","instrumental","peaceful","calm","warm","melodic","meditative","soothing"]],
+        ["Jaimie Branch","Fly or Die Fly or Die Fly or Die ((World War))",["Avant-Garde Jazz"],"",["progressive","energetic","rhythmic","eclectic","conscious","improvisation","bittersweet","anxious"]],
+        ["Kassa Overall","ANIMALS",["Jazz Rap","Nu Jazz"],"",["eclectic","quirky","complex","abstract","progressive","playful","rhythmic","manic"]],
+        ["boygenius","the record",["Indie Folk","Singer-Songwriter"],"",["bittersweet","love","LGBTQ","sentimental","poetic","introspective","mellow","melancholic"]],
+        ["Sufjan Stevens","Javelin",["Indie Folk","Singer-Songwriter"],"",["death","LGBTQ","longing","lush","Christian","bittersweet","melancholic","existential"]],
+        ["Paramore","This Is Why",["Post-Punk Revival","Dance-Punk"],"",["energetic","melodic","pessimistic","conscious","introspective","anxious","rhythmic","anthemic"]],
+        ["King Krule","Space Heavy",["Neo-Psychedelia","Slowcore"],"",["nocturnal","lethargic","lonely","atmospheric","melancholic","psychedelic","abstract","deadpan"]],
+        ["Osees","Intercepted Message",["Synth Punk","Garage Punk"],"",["energetic","quirky","psychedelic","rhythmic","playful","cryptic","raw","hypnotic"]],
+        ["The Hives","The Death of Randy Fitzsimmons",["Garage Rock Revival"],"",["energetic","raw","playful","noisy","quirky","aggressive","rebellious","passionate"]],
+        ["Deerhoof","Miracle-Level",["Math Pop","Indie Rock"],"",["energetic","complex","quirky","rhythmic","dissonant","noisy","uncommon time signatures","progressive"]],
+        ["Water From Your Eyes","Everyone's Crushed",["Experimental Rock","Art Pop"],"",["apathetic","dissonant","urban","noisy","cryptic","chaotic","energetic","avant-garde"]],
+        ["Sampha","Lahai",["Alternative R&B","Neo-Soul"],"",["lush","atmospheric","ethereal","melodic","introspective","spiritual","sentimental","passionate"]],
+        ["Tinashe","BB/ANG3L",["Alternative R&B","Electronic"],"",["sensual","atmospheric","nocturnal","ethereal","lush","love","longing","sexual"]],
+        ["Shygirl","Nymph_o",["Alternative R&B","UK Bass"],"",["sexual","urban","aquatic","romantic","mellow","cold","love","surreal"]],
+        ["James Blake","Playing Robots Into Heaven",["Post-Dubstep","Future Garage"],"",["futuristic","atmospheric","rhythmic","hypnotic","cold","surreal","cryptic","lonely"]],
+        ["Steven Wilson","The Harmony Codex",["Art Rock","Electronic"],"",["eclectic","progressive","concept album","complex","melancholic","lush","atmospheric","futuristic"]],
+        ["yeule","Softscars",["Dream Pop","Indietronica"],"prior meh — strong genre match despite it",["ethereal","futuristic","melancholic","noisy","alienation","lonely","self-hatred","existential"]],
+        ["Kali Uchis","Red Moon in Venus",["Neo-Soul","Contemporary R&B"],"prior meh",["lush","love","sensual","psychedelic","soothing","atmospheric","warm","sexual"]],
+        ["Danny Brown","Quaranta",["Conscious Hip Hop","Hardcore Hip Hop"],"prior meh",["introspective","serious","conscious","depressive","dark","existential","sombre","crime"]]
+      ]
+    }
+  };
+
+  // Stable, content-derived id — NOT array position. Object.keys() on a plain object
+  // reorders integer-like keys ("2020","2023",...) numerically regardless of insertion
+  // order, so a position-based id silently shifts every time an earlier year is added
+  // later, which would quietly detach every saved rating from its actual album.
+  function hashId(str){
+    var h = 5381;
+    for(var i=0;i<str.length;i++){ h = ((h*33) ^ str.charCodeAt(i)) >>> 0; }
+    return 'a' + h.toString(36);
+  }
+
+  var ALL = [];
+  Object.keys(RAW).forEach(function(year){
+    Object.keys(RAW[year]).forEach(function(tier){
+      RAW[year][tier].forEach(function(it){
+        var id = hashId(year + '|' + tier + '|' + it[0] + '|' + it[1]);
+        ALL.push({ id:id, year:Number(year), tier:tier, artist:it[0], album:it[1], tags:it[2], note:it[3], descriptors:it[4]||[] });
+      });
+    });
+  });
+
+  // RYM parent genre for each subgenre tag in use, from rateyourmusic.com/genres/
+  var GENRE_PARENT = {
+    'Abstract Hip Hop':'Hip Hop',
+    'Afrobeat':'Regional Music',
+    'Alt-Country':'Country',
+    'Alternative Metal':'Metal',
+    'Alternative R&B':'R&B',
+    'Alternative Rock':'Rock',
+    'Alt-Pop':'Pop',
+    'Ambient':'Ambient',
+    'Ambient Pop':'Ambient Pop',
+    'Art Pop':'Pop',
+    'Art Rock':'Rock',
+    'Atmospheric Sludge Metal':'Metal',
+    'Avant-Garde Jazz':'Jazz',
+    'Avant-Garde Metal':'Metal',
+    'Baroque Pop':'Pop',
+    'Beatdown Hardcore':'Punk / Post-Punk / Hardcore',
+    'Bedroom Pop':'Pop',
+    'Blackgaze':'Metal',
+    'Chamber Jazz':'Jazz',
+    'Chamber Pop':'Pop',
+    'Chillsynth':'Electronic',
+    'Chillwave':'Electronic',
+    'Choral':'Classical Music',
+    'Cinematic Classical':'Classical Music',
+    'City Pop':'Pop',
+    'Classical Crossover':'Pop',
+    'Conscious Hip Hop':'Hip Hop',
+    'Contemporary R&B':'R&B',
+    'Dance':'Dance',
+    'Dance-Pop':'Dance',
+    'Dance-Punk':'Punk / Post-Punk / Hardcore',
+    'Dariacore':'Dance',
+    'Death Metal':'Metal',
+    'Deathcore':'Metal',
+    'Deconstructed Club':'Dance',
+    'Digicore':'Hip Hop',
+    'Djent':'Metal',
+    'Doomgaze':'Metal',
+    'Dream Pop':'Psychedelia',
+    'Drill and Bass':'Electronic',
+    'Drumless':'Hip Hop',
+    'Dub':'Reggae / Ska / Dancehall',
+    'EDM':'Dance',
+    'Electro House':'Dance',
+    'Electronic':'Electronic',
+    'Electronic Dance Music':'Dance',
+    'Electronicore':'Punk / Post-Punk / Hardcore',
+    'Electropop':'Electronic',
+    'Emo':'Punk / Post-Punk / Hardcore',
+    'Emo-Pop':'Punk / Post-Punk / Hardcore',
+    'Emoviolence':'Punk / Post-Punk / Hardcore',
+    'Ethereal Wave':'Punk / Post-Punk / Hardcore',
+    'Experimental Hip Hop':'Hip Hop',
+    'Experimental Rock':'Rock',
+    'Folk Rock':'Rock',
+    'Funk':'R&B',
+    'Funktronica':'Electronic',
+    'Future Garage':'Dance',
+    'Garage Punk':'Punk / Post-Punk / Hardcore',
+    'Garage Rock Revival':'Rock',
+    'Geek Rock':'Rock',
+    'Glitch Pop':'Electronic',
+    'Gothic Rock':'Punk / Post-Punk / Hardcore',
+    'Hard Dance':'Dance',
+    'Hardcore Hip Hop':'Hip Hop',
+    'Hip Hop':'Hip Hop',
+    'Hyperpop':'Electronic',
+    'Hypnagogic Pop':'Psychedelia',
+    'IDM':'Electronic',
+    'Indie Folk':'Folk',
+    'Indie Rock':'Rock',
+    'Indietronica':'Electronic',
+    'Industrial Hip Hop':'Hip Hop',
+    'Industrial Metal':'Industrial & Noise',
+    'Jangle Pop':'Pop',
+    'Jazz Fusion':'Jazz',
+    'Jazz Poetry':'Jazz',
+    'Jazz Pop':'Pop',
+    'Jazz Rap':'Hip Hop',
+    'Jazz-Funk':'Jazz',
+    'Jazz-Rock':'Rock',
+    'J-Pop':'Pop',
+    'Mall Screamo':'Punk / Post-Punk / Hardcore',
+    'Math Pop':'Rock',
+    'Math Rock':'Rock',
+    'Mathcore':'Metal',
+    'Melodic Death Metal':'Metal',
+    'Melodic Metalcore':'Metal',
+    'Metalcore':'Metal',
+    'Midwest Emo':'Punk / Post-Punk / Hardcore',
+    'Minimalism':'Classical Music',
+    'Modern Classical':'Classical Music',
+    'Neo-City Pop':'Pop',
+    'Neo-Psychedelia':'Psychedelia',
+    'Neo-Soul':'R&B',
+    'New Rave':'Dance',
+    'Noise Pop':'Rock',
+    'Noise Rock':'Rock',
+    'Nu Jazz':'Electronic',
+    'Orchestral':'Classical Music',
+    'Pop Punk':'Punk / Post-Punk / Hardcore',
+    'Pop Rap':'Hip Hop',
+    'Post-Bop':'Jazz',
+    'Post-Britpop':'Pop',
+    'Post-Dubstep':'Dance',
+    'Post-Hardcore':'Punk / Post-Punk / Hardcore',
+    'Post-Metal':'Metal',
+    'Post-Punk':'Punk / Post-Punk / Hardcore',
+    'Post-Punk Revival':'Punk / Post-Punk / Hardcore',
+    'Post-Rock':'Rock',
+    'Power Pop':'Pop',
+    'Progressive Electronic':'Electronic',
+    'Progressive Metal':'Metal',
+    'Progressive Rock':'Rock',
+    'Psychedelic Pop':'Pop',
+    'Rock Opera':'Rock',
+    'Screamo':'Punk / Post-Punk / Hardcore',
+    'Shimokita-kei':'Rock',
+    'Shoegaze':'Rock',
+    'Singer-Songwriter':'Singer-Songwriter',
+    'Slacker Rock':'Rock',
+    'Slowcore':'Rock',
+    'Sludge Metal':'Metal',
+    'Slushwave':'Electronic',
+    'Smooth Soul':'R&B',
+    'Sophisti-Pop':'Pop',
+    'Spiritual Jazz':'Jazz',
+    'String Quartet':'Classical Music',
+    'Swancore':'Punk / Post-Punk / Hardcore',
+    'Synth Funk':'R&B',
+    'Synth Punk':'Electronic',
+    'Synthpop':'Electronic',
+    'Synthwave':'Electronic',
+    'Thall':'Metal',
+    'Traditional Pop':'Pop',
+    'Twee Pop':'Pop',
+    'UK Bass':'Dance',
+    'Utopian Virtual':'Electronic',
+    'Vaporwave':'Electronic',
+    'Vocal Jazz':'Jazz',
+    'Zeuhl':'Rock'
+  };
+  function genreFamily(t){ return GENRE_PARENT[t] || 'Other'; }
+
+  var YEARS = [2026,2025,2024,2023,2022,2021,2020];
+  var TIERS = ["Confirmed favorites","Best new discoveries","Worth a shot"];
+
+  var els = {
+    tiers: document.getElementById('tiers'),
+    empty: document.getElementById('empty'),
+    search: document.getElementById('search'),
+    yearChips: document.getElementById('yearChips'),
+    tierChips: document.getElementById('tierChips'),
+    statusChips: document.getElementById('statusChips'),
+    genreChips: document.getElementById('genreChips'),
+    descriptorChips: document.getElementById('descriptorChips'),
+    progNum: document.getElementById('progNum'),
+    progTotal: document.getElementById('progTotal'),
+    progAllNum: document.getElementById('progAllNum'),
+    progAllTotal: document.getElementById('progAllTotal'),
+    progFill: document.getElementById('progFill'),
+    cKeep: document.getElementById('cKeep'),
+    cMeh: document.getElementById('cMeh'),
+    cToss: document.getElementById('cToss'),
+    surpriseBtn: document.getElementById('surpriseBtn'),
+    copyBtn: document.getElementById('copyBtn'),
+    spotgenBtn: document.getElementById('spotgenBtn'),
+    toast: document.getElementById('toast')
+  };
+  els.progAllTotal.textContent = ALL.length;
+
+  var db = null;
+  var LS_KEY = 'spinQueueProgress_v2';
+  var state = {};
+  var activeYears = {}; YEARS.forEach(function(y){ activeYears[y]=true; });
+  var activeTiers = {}; TIERS.forEach(function(t){ activeTiers[t]=true; });
+  var statusFilter = 'all';
+  var activeGenres = new Set();
+  var GENRE_CHIP_COUNT = 20;
+  var genresExpanded = false;
+  var activeDescriptors = new Set();
+  var DESCRIPTOR_CHIP_COUNT = 20;
+  var descriptorsExpanded = false;
+  var query = '';
+  var viewMode = 'list';
+  var hubMode = 'genre';
+  var expandedHubs = new Set();
+  var selectedItemId = null;
+  var nodePosCache = {};
+  var sim = null;
+  var HUB_COUNT = 15;
+
+  // one-time seed from the Claude artifact's ratings as of the day this page was deployed —
+  // only used if this browser has never saved anything locally; every rating from here on
+  // lives in this browser's own localStorage, independent of the artifact version
+  var SEED_RATINGS = {"a1772iuq":{"rating":"keep"},"a1fbbcee":{"rating":"keep"},"a1g0ulg1":{"rating":"keep"},"aay2nlp":{"rating":"keep"},"aba4yh0":{"rating":"keep"},"apefime":{"rating":"keep"},"ath4fys":{"rating":"keep"}};
+  function loadLocal(){
+    try{
+      var r = localStorage.getItem(LS_KEY);
+      if(r) return JSON.parse(r);
+      localStorage.setItem(LS_KEY, JSON.stringify(SEED_RATINGS));
+      return SEED_RATINGS;
+    }catch(e){ return SEED_RATINGS; }
+  }
+  function saveLocal(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
+  function persist(){
+    if(db){ db.doc('progress/main').set({ items: state, updatedAt: Date.now() }).catch(function(){ saveLocal(); }); }
+    else { saveLocal(); }
+  }
+
+  // Four states total: unheard (no entry in state), toss, meh, keep.
+  // Tapping the currently-active rating again clears it back to unheard.
+  function setRating(id, r){
+    var cur = state[id];
+    if(cur && cur.rating === r){ delete state[id]; }
+    else { state[id] = { rating: r }; }
+    persist();
+  }
+
+  function ytSearch(it){
+    return 'https://music.youtube.com/search?q=' + encodeURIComponent(it.artist + ' ' + it.album);
+  }
+
+  function showToast(msg){
+    els.toast.textContent = msg;
+    els.toast.classList.add('show');
+    setTimeout(function(){ els.toast.classList.remove('show'); }, 1800);
+  }
+
+  function buildChips(){
+    els.yearChips.innerHTML = '';
+    var allYearsChip = document.createElement('span');
+    allYearsChip.className = 'chip on';
+    allYearsChip.textContent = 'All years';
+    allYearsChip.addEventListener('click', function(){
+      YEARS.forEach(function(y){ activeYears[y]=true; });
+      refresh();
+    });
+    els.yearChips.appendChild(allYearsChip);
+    YEARS.forEach(function(y){
+      var c = document.createElement('span');
+      c.className = 'chip on';
+      c.textContent = y;
+      c.addEventListener('click', function(){
+        activeYears[y] = !activeYears[y];
+        if(!YEARS.some(function(yy){ return activeYears[yy]; })) YEARS.forEach(function(yy){ activeYears[yy]=true; });
+        refresh();
+      });
+      c.dataset.year = y;
+      els.yearChips.appendChild(c);
+    });
+
+    els.tierChips.innerHTML = '';
+    TIERS.forEach(function(t){
+      var c = document.createElement('span');
+      c.className = 'chip on';
+      c.textContent = t;
+      c.addEventListener('click', function(){
+        activeTiers[t] = !activeTiers[t];
+        if(!TIERS.some(function(tt){ return activeTiers[tt]; })) TIERS.forEach(function(tt){ activeTiers[tt]=true; });
+        refresh();
+      });
+      c.dataset.tier = t;
+      els.tierChips.appendChild(c);
+    });
+
+    var STATUSES = [
+      ['all','All'], ['unlistened','Unheard'], ['keep','Keep'], ['meh','Meh'], ['toss','Toss']
+    ];
+    els.statusChips.innerHTML = '';
+    STATUSES.forEach(function(s){
+      var c = document.createElement('span');
+      c.className = 'chip' + (s[0]==='all' ? ' on' : '');
+      c.textContent = s[1];
+      c.dataset.status = s[0];
+      c.addEventListener('click', function(){
+        statusFilter = s[0];
+        refresh();
+      });
+      els.statusChips.appendChild(c);
+    });
+
+    var allGenres = computeGroupedGenres();
+    var shownGenres = genresExpanded ? allGenres : allGenres.slice(0, GENRE_CHIP_COUNT);
+    els.genreChips.innerHTML = '';
+    if(allGenres.length){
+      var label = document.createElement('span');
+      label.style.cssText = 'font-family:\'Space Mono\';font-size:10.5px;color:var(--ink-soft2);align-self:center;margin-right:2px;';
+      label.textContent = 'Genre (' + allGenres.length + '), grouped by RYM parent genre:';
+      label.style.flexBasis = '100%';
+      els.genreChips.appendChild(label);
+    }
+    var lastFamily = null;
+    shownGenres.forEach(function(g){
+      if(g.family !== lastFamily){
+        lastFamily = g.family;
+        var fl = document.createElement('span');
+        fl.className = 'family-label';
+        fl.textContent = g.family;
+        els.genreChips.appendChild(fl);
+      }
+      var c = document.createElement('span');
+      c.className = 'chip';
+      c.textContent = g.tag;
+      c.dataset.genre = g.tag;
+      c.addEventListener('click', function(){
+        if(activeGenres.has(g.tag)) activeGenres.delete(g.tag); else activeGenres.add(g.tag);
+        refresh();
+      });
+      els.genreChips.appendChild(c);
+    });
+    if(allGenres.length > GENRE_CHIP_COUNT){
+      var more = document.createElement('span');
+      more.className = 'chip';
+      more.style.borderStyle = 'dashed';
+      more.style.flexBasis = 'auto';
+      more.textContent = genresExpanded ? 'Show fewer' : ('+' + (allGenres.length - GENRE_CHIP_COUNT) + ' more');
+      more.addEventListener('click', function(){
+        genresExpanded = !genresExpanded;
+        buildChips();
+        syncChipVisuals();
+      });
+      els.genreChips.appendChild(more);
+    }
+
+    var allDescriptors = computeTopDescriptors(Infinity);
+    var shownDescriptors = descriptorsExpanded ? allDescriptors : allDescriptors.slice(0, DESCRIPTOR_CHIP_COUNT);
+    els.descriptorChips.innerHTML = '';
+    if(allDescriptors.length){
+      var dLabel = document.createElement('span');
+      dLabel.style.cssText = 'font-family:\'Space Mono\';font-size:10.5px;color:var(--ink-soft2);align-self:center;margin-right:2px;';
+      dLabel.textContent = 'Descriptor (' + allDescriptors.length + '):';
+      els.descriptorChips.appendChild(dLabel);
+    }
+    shownDescriptors.forEach(function(d){
+      var c = document.createElement('span');
+      c.className = 'chip';
+      c.textContent = d;
+      c.dataset.descriptor = d;
+      c.addEventListener('click', function(){
+        if(activeDescriptors.has(d)) activeDescriptors.delete(d); else activeDescriptors.add(d);
+        refresh();
+      });
+      els.descriptorChips.appendChild(c);
+    });
+    if(allDescriptors.length > DESCRIPTOR_CHIP_COUNT){
+      var dMore = document.createElement('span');
+      dMore.className = 'chip';
+      dMore.style.borderStyle = 'dashed';
+      dMore.textContent = descriptorsExpanded ? 'Show fewer' : ('+' + (allDescriptors.length - DESCRIPTOR_CHIP_COUNT) + ' more');
+      dMore.addEventListener('click', function(){
+        descriptorsExpanded = !descriptorsExpanded;
+        buildChips();
+        syncChipVisuals();
+      });
+      els.descriptorChips.appendChild(dMore);
+    }
+  }
+
+  function computeTopDescriptors(n){
+    var freq = {};
+    ALL.forEach(function(it){ it.descriptors.forEach(function(d){ freq[d] = (freq[d]||0) + 1; }); });
+    return Object.keys(freq).sort(function(a,b){ return freq[b]-freq[a]; }).slice(0, n);
+  }
+
+  function computeGroupedGenres(){
+    var freq = {};
+    ALL.forEach(function(it){ it.tags.forEach(function(t){ freq[t] = (freq[t]||0) + 1; }); });
+    var familyFreq = {};
+    Object.keys(freq).forEach(function(t){
+      var f = genreFamily(t);
+      familyFreq[f] = (familyFreq[f]||0) + freq[t];
+    });
+    var tags = Object.keys(freq);
+    tags.sort(function(a,b){
+      var fa = genreFamily(a), fb = genreFamily(b);
+      if(fa !== fb) return familyFreq[fb] - familyFreq[fa];
+      return freq[b] - freq[a];
+    });
+    return tags.map(function(t){ return { tag:t, count:freq[t], family:genreFamily(t) }; });
+  }
+
+  function syncChipVisuals(){
+    Array.prototype.forEach.call(els.yearChips.querySelectorAll('.chip[data-year]'), function(c){
+      c.classList.toggle('on', activeYears[c.dataset.year]);
+    });
+    Array.prototype.forEach.call(els.tierChips.querySelectorAll('.chip[data-tier]'), function(c){
+      c.classList.toggle('on', activeTiers[c.dataset.tier]);
+    });
+    Array.prototype.forEach.call(els.statusChips.querySelectorAll('.chip[data-status]'), function(c){
+      c.classList.toggle('on', c.dataset.status === statusFilter);
+    });
+    Array.prototype.forEach.call(els.genreChips.querySelectorAll('.chip[data-genre]'), function(c){
+      c.classList.toggle('on', activeGenres.has(c.dataset.genre));
+    });
+    Array.prototype.forEach.call(els.descriptorChips.querySelectorAll('.chip[data-descriptor]'), function(c){
+      c.classList.toggle('on', activeDescriptors.has(c.dataset.descriptor));
+    });
+    updateFilterBadge();
+  }
+
+  function updateFilterBadge(){
+    var n = 0;
+    YEARS.forEach(function(y){ if(!activeYears[y]) n++; });
+    TIERS.forEach(function(t){ if(!activeTiers[t]) n++; });
+    if(statusFilter !== 'all') n++;
+    n += activeGenres.size;
+    n += activeDescriptors.size;
+    var badge = document.getElementById('filterCount');
+    badge.textContent = n;
+    badge.hidden = n === 0;
+  }
+
+  function matchesQuery(it){
+    if(!query) return true;
+    var hay = (it.artist + ' ' + it.album + ' ' + it.tags.join(' ') + ' ' + it.descriptors.join(' ')).toLowerCase();
+    return hay.indexOf(query) !== -1;
+  }
+
+  function matchesStatus(it){
+    var s = state[it.id];
+    if(statusFilter === 'all') return true;
+    if(statusFilter === 'unlistened') return !(s && s.rating);
+    return !!(s && s.rating === statusFilter);
+  }
+
+  function matchesGenre(it){
+    if(activeGenres.size === 0) return true;
+    return it.tags.some(function(t){ return activeGenres.has(t); });
+  }
+
+  function matchesDescriptor(it){
+    if(activeDescriptors.size === 0) return true;
+    return it.descriptors.some(function(d){ return activeDescriptors.has(d); });
+  }
+
+  function visibleItems(){
+    return ALL.filter(function(it){
+      if(!activeYears[it.year]) return false;
+      if(!activeTiers[it.tier]) return false;
+      if(!matchesQuery(it)) return false;
+      if(!matchesStatus(it)) return false;
+      if(!matchesGenre(it)) return false;
+      if(!matchesDescriptor(it)) return false;
+      return true;
+    });
+  }
+
+  function render(){
+    syncChipVisuals();
+    var visible = visibleItems();
+    els.tiers.innerHTML = '';
+    els.empty.hidden = visible.length !== 0;
+
+    YEARS.forEach(function(year){
+      if(!activeYears[year]) return;
+      TIERS.forEach(function(tier){
+        if(!activeTiers[tier]) return;
+        var groupItems = visible.filter(function(it){ return it.year===year && it.tier===tier; });
+        if(groupItems.length===0) return;
+
+        var sec = document.createElement('section');
+        sec.className = 'tier';
+        sec.dataset.tier = tier;
+        var head = document.createElement('div');
+        head.className = 'tier-head';
+        head.innerHTML = '<h2>' + year + ' &middot; ' + tier + '</h2><span>' + groupItems.length + '</span>';
+        sec.appendChild(head);
+
+        groupItems.forEach(function(it){
+          sec.appendChild(renderItem(it));
+        });
+        els.tiers.appendChild(sec);
+      });
+    });
+
+    var done = 0, doneAll = 0;
+    var c = { keep:0, meh:0, toss:0 };
+    visible.forEach(function(it){ if(state[it.id] && state[it.id].rating) done++; });
+    ALL.forEach(function(it){
+      var s = state[it.id];
+      if(s && s.rating){ doneAll++; c[s.rating]++; }
+    });
+    els.progNum.textContent = done;
+    els.progTotal.textContent = visible.length;
+    els.progAllNum.textContent = doneAll;
+    els.progFill.style.width = (visible.length ? done/visible.length*100 : 0) + '%';
+    els.cKeep.textContent = c.keep;
+    els.cMeh.textContent = c.meh;
+    els.cToss.textContent = c.toss;
+  }
+
+  function refresh(){
+    render();
+    if(viewMode === 'graph') renderGraph();
+    if(viewMode === 'stats') renderStats();
+  }
+
+  function setViewMode(mode){
+    viewMode = mode;
+    Array.prototype.forEach.call(document.querySelectorAll('#viewToggle button'), function(b){
+      b.classList.toggle('on', b.dataset.view === mode);
+    });
+    document.getElementById('tiers').hidden = mode !== 'list';
+    document.getElementById('graphView').hidden = mode !== 'graph';
+    document.getElementById('statsView').hidden = mode !== 'stats';
+    document.getElementById('playlistsView').hidden = mode !== 'playlists';
+    document.getElementById('empty').hidden = mode !== 'list' ? true : (visibleItems().length !== 0);
+    if(mode === 'graph') renderGraph();
+    if(mode === 'stats') renderStats();
+    if(mode === 'playlists') renderPlaylistsView();
+  }
+
+  function statBarRow(label, pct, countText, color){
+    var row = document.createElement('div');
+    row.className = 'stat-bar-row';
+    var l = document.createElement('span');
+    l.className = 'stat-label';
+    l.textContent = label;
+    var track = document.createElement('div');
+    track.className = 'stat-bar-track';
+    var fill = document.createElement('div');
+    fill.className = 'stat-bar-fill';
+    fill.style.width = pct + '%';
+    fill.style.background = color;
+    track.appendChild(fill);
+    var c = document.createElement('span');
+    c.className = 'stat-count';
+    c.textContent = countText;
+    row.appendChild(l);
+    row.appendChild(track);
+    row.appendChild(c);
+    return row;
+  }
+
+  function renderBarSection(elId, freqObj, topN, color){
+    var el = document.getElementById(elId);
+    el.innerHTML = '';
+    var keys = Object.keys(freqObj).sort(function(a, b){ return freqObj[b] - freqObj[a]; }).slice(0, topN);
+    if(keys.length === 0){
+      var none = document.createElement('p');
+      none.className = 'stats-none';
+      none.textContent = 'Not enough data yet';
+      el.appendChild(none);
+      return;
+    }
+    var max = freqObj[keys[0]];
+    keys.forEach(function(k){
+      var pct = Math.max(4, Math.round(freqObj[k] / max * 100));
+      el.appendChild(statBarRow(k, pct, String(freqObj[k]), color));
+    });
+  }
+
+  function renderStats(){
+    var rated = ALL.filter(function(it){ return state[it.id] && state[it.id].rating; });
+    var keeps = rated.filter(function(it){ return state[it.id].rating === 'keep'; });
+    var tosses = rated.filter(function(it){ return state[it.id].rating === 'toss'; });
+    var mehs = rated.filter(function(it){ return state[it.id].rating === 'meh'; });
+    // Meh is excluded from taste-signal stats below: it means "heard it, no strong pull either way",
+    // so it carries no genre/descriptor preference signal in either direction.
+
+    var empty = document.getElementById('statsEmpty');
+    var content = document.getElementById('statsContent');
+    if(keeps.length + tosses.length === 0){
+      empty.hidden = false;
+      content.hidden = true;
+      document.getElementById('statsSub').textContent = '';
+      return;
+    }
+    empty.hidden = true;
+    content.hidden = false;
+    document.getElementById('statsSub').textContent =
+      rated.length + ' of ' + ALL.length + ' albums rated · ' + keeps.length + ' kept, ' + tosses.length + ' tossed, ' +
+      mehs.length + ' meh (meh excluded below — no strong signal either way)';
+
+    var tierEl = document.getElementById('statsTiers');
+    tierEl.innerHTML = '';
+    var tierColor = { 'Confirmed favorites': 'var(--keep)', 'Best new discoveries': 'var(--riso)', 'Worth a shot': 'var(--meh)' };
+    TIERS.forEach(function(tier){
+      var tierRated = rated.filter(function(it){ return it.tier === tier; });
+      if(tierRated.length === 0) return;
+      var tierKeeps = tierRated.filter(function(it){ return state[it.id].rating === 'keep'; });
+      var pct = Math.round(tierKeeps.length / tierRated.length * 100);
+      tierEl.appendChild(statBarRow(tier, pct, tierKeeps.length + '/' + tierRated.length, tierColor[tier]));
+    });
+    if(!tierEl.children.length){
+      var none = document.createElement('p');
+      none.className = 'stats-none';
+      none.textContent = 'Not enough data yet';
+      tierEl.appendChild(none);
+    }
+
+    var genreFreq = {};
+    keeps.forEach(function(it){ it.tags.forEach(function(t){ var fam = genreFamily(t); genreFreq[fam] = (genreFreq[fam]||0) + 1; }); });
+    renderBarSection('statsGenreFamilies', genreFreq, 10, 'var(--riso)');
+
+    var descFreq = {};
+    keeps.forEach(function(it){ it.descriptors.forEach(function(d){ descFreq[d] = (descFreq[d]||0) + 1; }); });
+    renderBarSection('statsDescriptors', descFreq, 12, 'var(--vibe)');
+
+    var tossFreq = {};
+    tosses.forEach(function(it){ it.tags.forEach(function(t){ var fam = genreFamily(t); tossFreq[fam] = (tossFreq[fam]||0) + 1; }); });
+    renderBarSection('statsTossed', tossFreq, 6, 'var(--toss)');
+  }
+
+  function hubField(it){ return hubMode === 'descriptor' ? it.descriptors : it.tags; }
+
+  function computeHubTags(items){
+    var freq = {};
+    items.forEach(function(it){
+      hubField(it).forEach(function(t){ freq[t] = (freq[t]||0) + 1; });
+    });
+    return Object.keys(freq).sort(function(a,b){ return freq[b]-freq[a]; }).slice(0, HUB_COUNT).map(function(t){
+      return { tag:t, count:freq[t] };
+    });
+  }
+
+  function nodeLabel(d){
+    if(d.type === 'hub') return d.label;
+    var t = d.item.album;
+    var cap = d.type === 'anchor' ? 16 : 14;
+    return t.length > cap ? t.slice(0, cap-2) + '…' : t;
+  }
+  function nodeCircleRadius(d){
+    return d.type === 'hub' ? 13 + Math.sqrt(d.count)*2.8 : (d.type === 'anchor' ? 10 : 7);
+  }
+  function nodeCollideRadius(d){
+    var label = nodeLabel(d);
+    var charW = d.type === 'hub' ? 6.8 : 6.2;
+    var halfLabel = (label.length * charW) / 2 + 6;
+    return Math.max(nodeCircleRadius(d) + 4, halfLabel);
+  }
+
+  function renderGraph(){
+    if(typeof d3 === 'undefined') return;
+    var stage = document.getElementById('graphStage');
+    var w = stage.clientWidth || 700, h = stage.clientHeight || 480;
+    var svg = d3.select('#graphSvg').attr('viewBox', '0 0 ' + w + ' ' + h);
+
+    var filteredItems = ALL.filter(function(it){ return activeYears[it.year] && activeTiers[it.tier]; });
+    var hubs = computeHubTags(filteredItems);
+    var hubIds = {}; hubs.forEach(function(hb){ hubIds[hb.tag] = true; });
+
+    var anchorItems = filteredItems.filter(function(it){ return it.tier === 'Confirmed favorites'; });
+    var expandedItems = filteredItems.filter(function(it){
+      return hubField(it).some(function(t){ return expandedHubs.has(t) && hubIds[t]; });
+    });
+    var searchItems = query ? filteredItems.filter(matchesQuery) : [];
+
+    var activeAlbumMap = {};
+    anchorItems.concat(expandedItems).concat(searchItems).forEach(function(it){ activeAlbumMap[it.id] = it; });
+    var activeAlbums = Object.keys(activeAlbumMap).map(function(id){ return activeAlbumMap[id]; });
+
+    var nodes = hubs.map(function(hb){
+      var id = 'hub:' + hb.tag;
+      var pos = nodePosCache[id];
+      var n = { id:id, type:'hub', label:hb.tag, count:hb.count };
+      if(pos){ n.x = pos.x; n.y = pos.y; } else { n.x = w/2 + (Math.random()-.5)*60; n.y = h/2 + (Math.random()-.5)*60; }
+      return n;
+    });
+    activeAlbums.forEach(function(it){
+      var pos = nodePosCache[it.id];
+      var n = { id:it.id, type: it.tier === 'Confirmed favorites' ? 'anchor' : 'album', item:it };
+      if(pos){ n.x = pos.x; n.y = pos.y; } else { n.x = w/2 + (Math.random()-.5)*260; n.y = h/2 + (Math.random()-.5)*260; }
+      nodes.push(n);
+    });
+
+    var links = [];
+    activeAlbums.forEach(function(it){
+      hubField(it).forEach(function(t){
+        if(hubIds[t]) links.push({ source: it.id, target: 'hub:' + t });
+      });
+    });
+
+    if(sim) sim.stop();
+    sim = d3.forceSimulation(nodes)
+      .force('link', d3.forceLink(links).id(function(d){ return d.id; }).distance(function(l){
+        return (l.source.type === 'hub' || l.target.type === 'hub') ? 46 : 26;
+      }).strength(0.7))
+      .force('charge', d3.forceManyBody().strength(function(d){ return d.type === 'hub' ? -110 : -34; }))
+      .force('center', d3.forceCenter(w/2, h/2))
+      .force('x', d3.forceX(w/2).strength(0.045))
+      .force('y', d3.forceY(h/2).strength(0.045))
+      .force('collide', d3.forceCollide(function(d){ return nodeCollideRadius(d); }))
+      .alpha(1).alphaDecay(0.04);
+
+    var g = svg.selectAll('g.zoom-layer').data([null]);
+    g = g.enter().append('g').attr('class', 'zoom-layer').merge(g);
+
+    var zoom = d3.zoom().scaleExtent([0.3, 4]).on('zoom', function(ev){ g.attr('transform', ev.transform); });
+    svg.call(zoom);
+
+    function fitToView(){
+      if(nodes.length === 0) return;
+      var pad = 46;
+      var xs = nodes.map(function(d){ return d.x; });
+      var ys = nodes.map(function(d){ return d.y; });
+      var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs);
+      var y0 = Math.min.apply(null, ys), y1 = Math.max.apply(null, ys);
+      var bw = Math.max(x1 - x0, 1), bh = Math.max(y1 - y0, 1);
+      var scale = Math.min((w - pad*2) / bw, (h - pad*2) / bh, 2.6);
+      scale = Math.max(scale, 0.3);
+      var cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+      var t = d3.zoomIdentity.translate(w/2, h/2).scale(scale).translate(-cx, -cy);
+      svg.transition().duration(450).call(zoom.transform, t);
+    }
+    svg.on('click', function(ev){
+      if(ev.target === svg.node()){
+        expandedHubs.clear();
+        selectedItemId = null;
+        document.getElementById('graphDetail').classList.remove('show');
+        renderGraph();
+      }
+    });
+
+    var link = g.selectAll('line.g-link').data(links, function(d){
+      return (d.source.id || d.source) + '->' + (d.target.id || d.target);
+    });
+    link.exit().remove();
+    link = link.enter().append('line').attr('class', 'g-link').merge(link);
+
+    var node = g.selectAll('g.g-node').data(nodes, function(d){ return d.id; });
+    node.exit().remove();
+    var nodeEnter = node.enter().append('g');
+    nodeEnter.append('circle');
+    nodeEnter.append('text').attr('text-anchor', 'middle');
+    node = nodeEnter.merge(node);
+
+    node.attr('class', function(d){
+      var cls = 'g-node g-node-' + d.type;
+      if(d.type === 'hub'){
+        cls += ' hub-' + hubMode;
+      } else {
+        var s = state[d.id];
+        if(s && s.rating) cls += ' rated-' + s.rating;
+      }
+      return cls;
+    });
+    node.select('circle').attr('r', nodeCircleRadius);
+    node.select('text')
+      .attr('dy', function(d){ return d.type === 'hub' ? -19 : -14; })
+      .text(nodeLabel);
+
+    node.on('click', function(ev, d){
+      ev.stopPropagation();
+      if(d.type === 'hub'){
+        if(expandedHubs.has(d.label)) expandedHubs.delete(d.label); else expandedHubs.add(d.label);
+        renderGraph();
+      } else {
+        selectedItemId = d.id;
+        renderDetailPanel(d.item);
+      }
+    });
+
+    var drag = d3.drag()
+      .on('start', function(ev, d){ if(!ev.active) sim.alphaTarget(0.2).restart(); d.fx = d.x; d.fy = d.y; })
+      .on('drag', function(ev, d){ d.fx = ev.x; d.fy = ev.y; })
+      .on('end', function(ev, d){ if(!ev.active) sim.alphaTarget(0); nodePosCache[d.id] = { x:d.fx, y:d.fy }; });
+    node.call(drag);
+
+    sim.on('tick', function(){
+      link.attr('x1', function(d){ return d.source.x; }).attr('y1', function(d){ return d.source.y; })
+          .attr('x2', function(d){ return d.target.x; }).attr('y2', function(d){ return d.target.y; });
+      node.attr('transform', function(d){ return 'translate(' + d.x + ',' + d.y + ')'; });
+    });
+    sim.on('end', function(){
+      nodes.forEach(function(d){ nodePosCache[d.id] = { x:d.x, y:d.y }; });
+      fitToView();
+    });
+
+    if(selectedItemId && activeAlbumMap[selectedItemId]) renderDetailPanel(activeAlbumMap[selectedItemId]);
+  }
+
+  function renderDetailPanel(it){
+    var panel = document.getElementById('graphDetail');
+    panel.classList.add('show');
+    var s = state[it.id] || { rating:null };
+    panel.innerHTML =
+      '<div class="album">' + it.album + '</div>' +
+      '<div class="name">' + it.artist + ' &middot; ' + it.year + ' &middot; ' + it.tier + '</div>' +
+      '<div class="tags">' + it.tags.map(function(t){ return '<span class="tag">'+t+'</span>'; }).join('') +
+        it.descriptors.map(function(t){ return '<span class="tag tag-desc">'+t+'</span>'; }).join('') + '</div>' +
+      (it.note ? '<div class="note">' + it.note + '</div>' : '') +
+      '<div class="actions" id="detailActions"></div>';
+
+    var actions = document.getElementById('detailActions');
+    var link = document.createElement('a');
+    link.className = 'search-link'; link.href = ytSearch(it); link.target = '_blank'; link.rel = 'noopener noreferrer';
+    link.textContent = 'YT Music ▸';
+    actions.appendChild(link);
+
+    ['toss','meh','keep'].forEach(function(r){
+      var b = document.createElement('button');
+      b.className = 'rate-btn' + (s.rating === r ? ' sel' : '');
+      b.setAttribute('data-r', r);
+      b.textContent = r === 'toss' ? 'Toss' : (r === 'meh' ? 'Meh' : 'Keep');
+      b.addEventListener('click', function(){
+        setRating(it.id, r);
+        renderDetailPanel(it);
+        renderGraph();
+      });
+      actions.appendChild(b);
+    });
+  }
+
+  function renderItem(it){
+    var s = state[it.id] || { rating:null };
+    var row = document.createElement('div');
+    row.className = 'item' + (s.rating ? ' rated' : '');
+    row.id = it.id;
+
+    var meta = document.createElement('div');
+    meta.className = 'meta';
+    var noteHtml = it.note ? '<div class="note">' + it.note + '</div>' : '';
+    meta.innerHTML =
+      '<div class="top-row"><span class="album">' + it.album + '</span><span class="yr">' + it.year + '</span></div>' +
+      '<div class="name">' + it.artist + '</div>' +
+      '<div class="tags">' + it.tags.map(function(t){ return '<span class="tag">'+t+'</span>'; }).join('') +
+        it.descriptors.map(function(t){ return '<span class="tag tag-desc">'+t+'</span>'; }).join('') + '</div>' +
+      noteHtml;
+
+    var actions = document.createElement('div');
+    actions.className = 'actions';
+    var link = document.createElement('a');
+    link.className = 'search-link';
+    link.href = ytSearch(it);
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = 'YT Music ▸';
+    actions.appendChild(link);
+
+    ['toss','meh','keep'].forEach(function(r){
+      var b = document.createElement('button');
+      b.className = 'rate-btn' + (s.rating===r ? ' sel' : '');
+      b.setAttribute('data-r', r);
+      b.textContent = r === 'toss' ? 'Toss' : (r === 'meh' ? 'Meh' : 'Keep');
+      b.addEventListener('click', function(){
+        setRating(it.id, r);
+        refresh();
+      });
+      actions.appendChild(b);
+    });
+    meta.appendChild(actions);
+
+    row.appendChild(meta);
+    return row;
+  }
+
+  var THEME_KEY = 'spinQueueTheme';
+  var themeToggleBtn = document.getElementById('themeToggle');
+  function systemPrefersLight(){
+    return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+  }
+  function isLightNow(){
+    var stamp = document.documentElement.getAttribute('data-theme');
+    if(stamp === 'light') return true;
+    if(stamp === 'dark') return false;
+    return systemPrefersLight();
+  }
+  function applyTheme(mode){
+    if(mode === 'light' || mode === 'dark'){ document.documentElement.setAttribute('data-theme', mode); }
+    else { document.documentElement.removeAttribute('data-theme'); }
+    themeToggleBtn.innerHTML = isLightNow() ? '&#9789; Dark' : '&#9788; Light';
+  }
+  var savedTheme = null;
+  try{ savedTheme = localStorage.getItem(THEME_KEY); }catch(e){}
+  applyTheme(savedTheme);
+  themeToggleBtn.addEventListener('click', function(){
+    var next = isLightNow() ? 'dark' : 'light';
+    try{ localStorage.setItem(THEME_KEY, next); }catch(e){}
+    applyTheme(next);
+  });
+
+  var filtersToggleBtn = document.getElementById('filtersToggle');
+  var filterPanel = document.getElementById('filterPanel');
+  var filtersOpen = false;
+  filtersToggleBtn.addEventListener('click', function(){
+    filtersOpen = !filtersOpen;
+    filterPanel.hidden = !filtersOpen;
+    filtersToggleBtn.classList.toggle('open', filtersOpen);
+  });
+
+  els.search.addEventListener('input', function(){
+    query = els.search.value.trim().toLowerCase();
+    refresh();
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#viewToggle button'), function(b){
+    b.addEventListener('click', function(){ setViewMode(b.dataset.view); });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#hubToggle button'), function(b){
+    b.addEventListener('click', function(){
+      if(hubMode === b.dataset.hub) return;
+      hubMode = b.dataset.hub;
+      Array.prototype.forEach.call(document.querySelectorAll('#hubToggle button'), function(bb){
+        bb.classList.toggle('on', bb.dataset.hub === hubMode);
+      });
+      expandedHubs.clear();
+      selectedItemId = null;
+      document.getElementById('graphDetail').classList.remove('show');
+      renderGraph();
+    });
+  });
+  window.addEventListener('resize', function(){ if(viewMode === 'graph') renderGraph(); });
+
+  els.surpriseBtn.addEventListener('click', function(){
+    var pool = visibleItems().filter(function(it){ return !(state[it.id] && state[it.id].rating); });
+    if(pool.length===0){ showToast('Nothing left unheard in this view'); return; }
+    var pick = pool[Math.floor(Math.random()*pool.length)];
+    var el = document.getElementById(pick.id);
+    if(el){
+      el.scrollIntoView({ behavior:'smooth', block:'center' });
+      el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+    }
+  });
+
+  els.copyBtn.addEventListener('click', function(){
+    var keeps = ALL.filter(function(it){ return state[it.id] && state[it.id].rating === 'keep'; });
+    if(keeps.length===0){ showToast('No Keeps yet'); return; }
+    var text = keeps.map(function(it){ return it.artist + ' — ' + it.album + ' (' + it.year + ')'; }).join('\n');
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){
+        showToast('Copied ' + keeps.length + ' Keeps to clipboard');
+      }).catch(function(){ showToast('Copy failed — select and copy manually'); });
+    } else {
+      showToast('Clipboard not available here');
+    }
+  });
+
+  els.spotgenBtn.addEventListener('click', function(){
+    var keeps = ALL.filter(function(it){ return state[it.id] && state[it.id].rating === 'keep'; });
+    if(keeps.length===0){ showToast('No Keeps yet'); return; }
+    // spotgen (epsil.github.io/spotgen) directive syntax: #album TITLE - ARTIST
+    var text = keeps.map(function(it){ return '#album ' + it.album + ' - ' + it.artist; }).join('\n');
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){
+        showToast('Copied ' + keeps.length + ' Keeps for Spotgen — paste at epsil.github.io/spotgen');
+      }).catch(function(){ showToast('Copy failed — select and copy manually'); });
+    } else {
+      showToast('Clipboard not available here');
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // Spotify Playlists (Authorization Code + PKCE). This is a plain static
+  // site with no CSP sandbox, so — unlike the Claude Artifact version this
+  // was originally built for — a normal browser redirect and normal fetch()
+  // calls to Spotify's API both just work.
+  // ---------------------------------------------------------------------
+  var SPOTIFY_CLIENT_ID = '1d102e26404546f795394736c8a0b854';
+  var SPOTIFY_SCOPES = 'playlist-modify-public playlist-modify-private';
+  var SPOTIFY_TOKEN_KEY = 'spinQueueSpotifyToken';
+  var SPOTIFY_PKCE_KEY = 'spinQueueSpotifyPkce';
+
+  function spotifyRedirectUri(){ return location.origin + location.pathname; }
+
+  function b64url(bytes){
+    var bin = '';
+    for(var i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  }
+  function randomString(len){
+    var bytes = new Uint8Array(len);
+    crypto.getRandomValues(bytes);
+    return b64url(bytes);
+  }
+  function sha256(str){
+    var data = new TextEncoder().encode(str);
+    return crypto.subtle.digest('SHA-256', data).then(function(buf){ return b64url(new Uint8Array(buf)); });
+  }
+
+  function loadSpotifyToken(){
+    try{ var r = localStorage.getItem(SPOTIFY_TOKEN_KEY); return r ? JSON.parse(r) : null; }catch(e){ return null; }
+  }
+  function saveSpotifyToken(t){ try{ localStorage.setItem(SPOTIFY_TOKEN_KEY, JSON.stringify(t)); }catch(e){} }
+  function clearSpotifyToken(){ try{ localStorage.removeItem(SPOTIFY_TOKEN_KEY); }catch(e){} }
+
+  function connectSpotify(){
+    var verifier = randomString(64);
+    var state = randomString(16);
+    try{ sessionStorage.setItem(SPOTIFY_PKCE_KEY, JSON.stringify({ verifier: verifier, state: state })); }catch(e){}
+    sha256(verifier).then(function(challenge){
+      var url = 'https://accounts.spotify.com/authorize?' + new URLSearchParams({
+        client_id: SPOTIFY_CLIENT_ID,
+        response_type: 'code',
+        redirect_uri: spotifyRedirectUri(),
+        code_challenge_method: 'S256',
+        code_challenge: challenge,
+        scope: SPOTIFY_SCOPES,
+        state: state
+      }).toString();
+      location.href = url;
+    });
+  }
+
+  function disconnectSpotify(){
+    clearSpotifyToken();
+    renderPlaylistsView();
+  }
+
+  function handleSpotifyRedirect(){
+    var params = new URLSearchParams(location.search);
+    var code = params.get('code');
+    var returnedState = params.get('state');
+    if(!code) return;
+    var pkce = null;
+    try{ pkce = JSON.parse(sessionStorage.getItem(SPOTIFY_PKCE_KEY) || 'null'); }catch(e){}
+    history.replaceState(null, '', location.pathname);
+    if(!pkce || pkce.state !== returnedState) return;
+    fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: spotifyRedirectUri(),
+        client_id: SPOTIFY_CLIENT_ID,
+        code_verifier: pkce.verifier
+      }).toString()
+    }).then(function(r){ return r.json(); }).then(function(data){
+      if(!data.access_token) return;
+      var token = { access_token: data.access_token, refresh_token: data.refresh_token, expires_in: data.expires_in, obtained_at: Date.now() };
+      saveSpotifyToken(token);
+      try{ sessionStorage.removeItem(SPOTIFY_PKCE_KEY); }catch(e){}
+      return fetchSpotifyProfile(token.access_token).then(function(profile){
+        if(profile && profile.id){
+          token.user_id = profile.id;
+          token.display_name = profile.display_name || profile.id;
+          saveSpotifyToken(token);
+        }
+        renderPlaylistsView();
+      });
+    }).catch(function(){});
+  }
+
+  function getValidSpotifyToken(){
+    var token = loadSpotifyToken();
+    if(!token) return Promise.resolve(null);
+    var age = Date.now() - token.obtained_at;
+    if(age < (token.expires_in - 60) * 1000) return Promise.resolve(token);
+    return fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: token.refresh_token, client_id: SPOTIFY_CLIENT_ID }).toString()
+    }).then(function(r){ return r.json(); }).then(function(data){
+      if(!data.access_token) return null;
+      var updated = Object.assign({}, token, data, { obtained_at: Date.now() });
+      if(!data.refresh_token) updated.refresh_token = token.refresh_token;
+      saveSpotifyToken(updated);
+      return updated;
+    }).catch(function(){ return null; });
+  }
+
+  function fetchSpotifyProfile(accessToken){
+    return fetch('https://api.spotify.com/v1/me', { headers: { Authorization: 'Bearer ' + accessToken } })
+      .then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; });
+  }
+
+  function spotifyApiFetch(accessToken, url, opts){
+    opts = opts || {};
+    opts.headers = Object.assign({ Authorization: 'Bearer ' + accessToken }, opts.headers || {});
+    return fetch(url, opts).then(function(res){
+      if(res.status === 429){
+        var wait = (parseInt(res.headers.get('retry-after') || '1', 10)) * 1000;
+        return new Promise(function(resolve){ setTimeout(resolve, wait); }).then(function(){ return spotifyApiFetch(accessToken, url, opts); });
+      }
+      return res;
+    });
+  }
+
+  var plActiveYears = new Set();
+  var plActiveGenreFamilies = new Set();
+  var plActiveDescriptors = new Set();
+  var plRating = 'keep';
+
+  function plMatches(){
+    return ALL.filter(function(it){
+      var s = state[it.id];
+      if(!s || s.rating !== plRating) return false;
+      if(plActiveYears.size && !plActiveYears.has(it.year)) return false;
+      if(plActiveGenreFamilies.size && !it.tags.some(function(t){ return plActiveGenreFamilies.has(genreFamily(t)); })) return false;
+      if(plActiveDescriptors.size && !it.descriptors.some(function(d){ return plActiveDescriptors.has(d); })) return false;
+      return true;
+    });
+  }
+
+  function plChip(label, active, onClick){
+    var c = document.createElement('span');
+    c.className = 'chip' + (active ? ' on' : '');
+    c.textContent = label;
+    c.addEventListener('click', onClick);
+    return c;
+  }
+
+  function plRenderMatchList(){
+    var matches = plMatches();
+    document.getElementById('plMatchCount').textContent = 'Matches ' + matches.length + ' album' + (matches.length===1?'':'s');
+    var listEl = document.getElementById('plMatchList');
+    listEl.innerHTML = '';
+    if(matches.length === 0){
+      var none = document.createElement('div');
+      none.className = 'stats-none';
+      none.textContent = 'Nothing matches these filters yet';
+      listEl.appendChild(none);
+      return;
+    }
+    var shown = matches.slice(0, 40);
+    shown.forEach(function(it){
+      var row = document.createElement('div');
+      row.textContent = it.artist + ' — ' + it.album + ' (' + it.year + ')';
+      listEl.appendChild(row);
+    });
+    if(matches.length > shown.length){
+      var more = document.createElement('div');
+      more.className = 'pl-more';
+      more.textContent = '+ ' + (matches.length - shown.length) + ' more';
+      listEl.appendChild(more);
+    }
+  }
+
+  function buildPlaylistChips(){
+    var ratingEl = document.getElementById('plRatingChips');
+    ratingEl.innerHTML = '';
+    [['keep','Keep'],['meh','Meh'],['toss','Toss']].forEach(function(r){
+      ratingEl.appendChild(plChip(r[1], plRating === r[0], function(){
+        plRating = r[0];
+        buildPlaylistChips();
+      }));
+    });
+
+    var yearEl = document.getElementById('plYearChips');
+    yearEl.innerHTML = '';
+    YEARS.forEach(function(y){
+      yearEl.appendChild(plChip(String(y), plActiveYears.has(y), function(){
+        if(plActiveYears.has(y)) plActiveYears.delete(y); else plActiveYears.add(y);
+        buildPlaylistChips();
+      }));
+    });
+
+    var families = Array.from(new Set(ALL.map(function(it){ return it.tags.map(genreFamily); }).flat())).sort();
+    var genreEl = document.getElementById('plGenreChips');
+    genreEl.innerHTML = '';
+    families.forEach(function(f){
+      genreEl.appendChild(plChip(f, plActiveGenreFamilies.has(f), function(){
+        if(plActiveGenreFamilies.has(f)) plActiveGenreFamilies.delete(f); else plActiveGenreFamilies.add(f);
+        buildPlaylistChips();
+      }));
+    });
+
+    var descFreq = {};
+    ALL.forEach(function(it){ it.descriptors.forEach(function(d){ descFreq[d] = (descFreq[d]||0) + 1; }); });
+    var descTop = Object.keys(descFreq).sort(function(a,b){ return descFreq[b]-descFreq[a]; }).slice(0, 24);
+    var descEl = document.getElementById('plDescChips');
+    descEl.innerHTML = '';
+    descTop.forEach(function(d){
+      descEl.appendChild(plChip(d, plActiveDescriptors.has(d), function(){
+        if(plActiveDescriptors.has(d)) plActiveDescriptors.delete(d); else plActiveDescriptors.add(d);
+        buildPlaylistChips();
+      }));
+    });
+
+    plRenderMatchList();
+  }
+
+  function renderPlaylistsView(){
+    var token = loadSpotifyToken();
+    var disconnected = document.getElementById('spotifyDisconnected');
+    var connected = document.getElementById('spotifyConnected');
+    if(!token){
+      disconnected.hidden = false;
+      connected.hidden = true;
+      document.getElementById('redirectUriDisplay').textContent = spotifyRedirectUri();
+      return;
+    }
+    disconnected.hidden = true;
+    connected.hidden = false;
+    document.getElementById('spotifyUserName').textContent = token.display_name || 'you';
+    buildPlaylistChips();
+  }
+
+  async function plFindAlbum(accessToken, artist, album){
+    var q = 'album:' + album + ' artist:' + artist;
+    var url = 'https://api.spotify.com/v1/search?' + new URLSearchParams({ q: q, type: 'album', limit: '1' }).toString();
+    var res = await spotifyApiFetch(accessToken, url);
+    var data = await res.json();
+    var items = data.albums && data.albums.items;
+    return (items && items[0]) || null;
+  }
+
+  async function plGetAlbumTracks(accessToken, albumId){
+    var uris = [];
+    var url = 'https://api.spotify.com/v1/albums/' + albumId + '/tracks?limit=50';
+    while(url){
+      var res = await spotifyApiFetch(accessToken, url);
+      var data = await res.json();
+      if(!data.items) break;
+      uris = uris.concat(data.items.map(function(t){ return t.uri; }));
+      url = data.next;
+    }
+    return uris;
+  }
+
+  function plLog(msg, cls){
+    var log = document.getElementById('plLog');
+    log.hidden = false;
+    var line = document.createElement('div');
+    if(cls) line.className = cls;
+    line.textContent = msg;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  document.getElementById('plCreateBtn').addEventListener('click', async function(){
+    var btn = document.getElementById('plCreateBtn');
+    var matches = plMatches();
+    document.getElementById('plLog').innerHTML = '';
+    document.getElementById('plLog').hidden = true;
+    if(matches.length === 0){ showToast('Nothing matches these filters'); return; }
+
+    btn.disabled = true;
+    btn.textContent = 'Working...';
+    try{
+      var token = await getValidSpotifyToken();
+      if(!token){ plLog('Not connected to Spotify — reconnecting...', 'pl-bad'); renderPlaylistsView(); return; }
+
+      var matched = [], allUris = [];
+      for(var i=0;i<matches.length;i++){
+        var it = matches[i];
+        var hit = await plFindAlbum(token.access_token, it.artist, it.album);
+        if(!hit){ plLog('no match: ' + it.artist + ' - ' + it.album, 'pl-bad'); continue; }
+        var uris = await plGetAlbumTracks(token.access_token, hit.id);
+        allUris = allUris.concat(uris);
+        matched.push(it);
+        plLog('matched: ' + it.artist + ' - ' + it.album + '  (' + uris.length + ' tracks)', 'pl-ok');
+      }
+
+      plLog('Matched ' + matched.length + '/' + matches.length + ' albums, ' + allUris.length + ' tracks total.');
+      if(allUris.length === 0){ plLog('No tracks matched — nothing created.', 'pl-bad'); return; }
+
+      var nameInput = document.getElementById('plNameInput').value.trim();
+      var name = nameInput || ('Spin Queue — ' + plRating +
+        (plActiveYears.size ? ' — ' + Array.from(plActiveYears).join('/') : '') +
+        (plActiveGenreFamilies.size ? ' — ' + Array.from(plActiveGenreFamilies).join('/') : ''));
+      var isPublic = document.getElementById('plPublicToggle').checked;
+
+      var createRes = await spotifyApiFetch(token.access_token, 'https://api.spotify.com/v1/users/' + token.user_id + '/playlists', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, description: 'Generated from Spin Queue (' + matches.length + ' albums, ' + plRating + ').', public: isPublic })
+      });
+      var playlist = await createRes.json();
+      if(!createRes.ok){ plLog('Playlist creation failed — see console.', 'pl-bad'); console.error(playlist); return; }
+
+      for(var b=0;b<allUris.length;b+=100){
+        var batch = allUris.slice(b, b+100);
+        await spotifyApiFetch(token.access_token, 'https://api.spotify.com/v1/playlists/' + playlist.id + '/tracks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uris: batch })
+        });
+      }
+      plLog('Done — ' + playlist.external_urls.spotify, 'pl-link');
+      showToast('Created "' + name + '" with ' + allUris.length + ' tracks');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Create Playlist';
+    }
+  });
+
+  document.getElementById('spotifyConnectBtn').addEventListener('click', connectSpotify);
+  document.getElementById('spotifyDisconnectBtn').addEventListener('click', function(ev){ ev.preventDefault(); disconnectSpotify(); });
+  document.getElementById('copyRedirectBtn').addEventListener('click', function(){
+    var uri = spotifyRedirectUri();
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(uri).then(function(){ showToast('Copied redirect URI'); }).catch(function(){ showToast('Copy failed — select manually'); });
+    } else { showToast('Clipboard not available here'); }
+  });
+
+  handleSpotifyRedirect();
+
+  // migrate the old {listened, rating} shape (pre-2026-09 builds) to the current
+  // {rating} shape, where absence from `state` means unheard.
+  function migrateState(raw){
+    var out = {};
+    Object.keys(raw || {}).forEach(function(id){
+      var v = raw[id];
+      if(v && v.rating){ out[id] = { rating: v.rating }; }
+    });
+    return out;
+  }
+
+  function init(loaded){
+    state = migrateState(loaded);
+    buildChips();
+    refresh();
+  }
+
+  if(window.claude && typeof window.claude.use === 'function'){
+    window.claude.use('db').then(function(handle){
+      if(!handle){ init(loadLocal()); return; }
+      db = handle;
+      db.doc('progress/main').get().then(function(snap){
+        var d = snap.exists ? snap.data() : null;
+        init(d && d.items ? d.items : {});
+      }).catch(function(){ init(loadLocal()); });
+    }).catch(function(){ init(loadLocal()); });
+  } else {
+    init(loadLocal());
+  }
+})();
+</script>
+</body>
+</html>
