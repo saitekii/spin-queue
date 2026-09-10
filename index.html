@@ -442,6 +442,10 @@
         <div class="chip-row" id="plRatingChips"></div>
       </div>
       <div class="pl-field">
+        <div class="pl-field-label">Tier <span class="pl-field-hint">(none selected = all)</span></div>
+        <div class="chip-row" id="plTierChips"></div>
+      </div>
+      <div class="pl-field">
         <div class="pl-field-label">Years <span class="pl-field-hint">(none selected = all)</span></div>
         <div class="chip-row" id="plYearChips"></div>
       </div>
@@ -2587,6 +2591,7 @@
   }
 
   var plActiveYears = new Set();
+  var plActiveTiers = new Set();
   var plActiveGenreFamilies = new Set();
   var plActiveDescriptors = new Set();
   var plRating = 'keep';
@@ -2600,6 +2605,7 @@
         if(!s || s.rating !== plRating) return false;
       }
       if(plActiveYears.size && !plActiveYears.has(it.year)) return false;
+      if(plActiveTiers.size && !plActiveTiers.has(it.tier)) return false;
       if(plActiveGenreFamilies.size){
         var itFamilies = it.tags.map(genreFamily);
         var famOk = plGenreMode === 'all'
@@ -2669,6 +2675,15 @@
     [['keep','Keep'],['meh','Meh'],['toss','Toss'],['all','All (incl. unrated)']].forEach(function(r){
       ratingEl.appendChild(plChip(r[1], plRating === r[0], function(){
         plRating = r[0];
+        buildPlaylistChips();
+      }));
+    });
+
+    var tierEl = document.getElementById('plTierChips');
+    tierEl.innerHTML = '';
+    TIERS.forEach(function(t){
+      tierEl.appendChild(plChip(t, plActiveTiers.has(t), function(){
+        if(plActiveTiers.has(t)) plActiveTiers.delete(t); else plActiveTiers.add(t);
         buildPlaylistChips();
       }));
     });
@@ -2786,6 +2801,7 @@
 
       var nameInput = document.getElementById('plNameInput').value.trim();
       var name = nameInput || ('Spin Queue — ' + plRating +
+        (plActiveTiers.size ? ' — ' + Array.from(plActiveTiers).join('/') : '') +
         (plActiveYears.size ? ' — ' + Array.from(plActiveYears).join('/') : '') +
         (plActiveGenreFamilies.size ? ' — ' + Array.from(plActiveGenreFamilies).join('/') : ''));
       var isPublic = document.getElementById('plPublicToggle').checked;
