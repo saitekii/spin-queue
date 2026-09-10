@@ -157,6 +157,9 @@
   #descriptorChips .chip{ color:var(--vibe); border-color:color-mix(in srgb, var(--vibe) 40%, var(--ink-3)); }
   #descriptorChips .chip.on{ color:var(--paper); border-color:var(--vibe); background:color-mix(in srgb, var(--vibe) 18%, transparent); }
 
+  /* 3-state playlist filter chips: neutral -> include (violet/teal, above) -> exclude (red, below) -> neutral */
+  .chip.excluded{ color:var(--paper); border-color:var(--toss); background:color-mix(in srgb, var(--toss) 18%, transparent); text-decoration:line-through; text-decoration-color:color-mix(in srgb, var(--toss) 70%, transparent); }
+
   .progress-row{
     display:flex; justify-content:space-between; align-items:baseline;
     font-family:'Space Mono', monospace; font-size:11.5px; color:var(--ink-soft); margin-bottom:6px;
@@ -451,14 +454,14 @@
       </div>
       <div class="pl-field">
         <div class="pl-field-label">
-          <span>Genre families <span class="pl-field-hint">(none selected = all)</span></span>
+          <span>Genre families <span class="pl-field-hint">(click: include, click again: avoid, click again: clear)</span></span>
           <span class="pl-mode-toggle" id="plGenreModeToggle"></span>
         </div>
         <div class="chip-row" id="plGenreChips"></div>
       </div>
       <div class="pl-field">
         <div class="pl-field-label">
-          <span>Descriptors <span class="pl-field-hint">(none selected = all)</span></span>
+          <span>Descriptors <span class="pl-field-hint">(click: include, click again: avoid, click again: clear)</span></span>
           <span class="pl-mode-toggle" id="plDescModeToggle"></span>
         </div>
         <div class="chip-row" id="plDescChips"></div>
@@ -2593,7 +2596,9 @@
   var plActiveYears = new Set();
   var plActiveTiers = new Set();
   var plActiveGenreFamilies = new Set();
+  var plExcludeGenreFamilies = new Set();
   var plActiveDescriptors = new Set();
+  var plExcludeDescriptors = new Set();
   var plRating = 'keep';
   var plGenreMode = 'any'; // 'any' = at least one selected family present, 'all' = every selected family present
   var plDescMode = 'any';  // same idea for descriptors
@@ -2606,19 +2611,22 @@
       }
       if(plActiveYears.size && !plActiveYears.has(it.year)) return false;
       if(plActiveTiers.size && !plActiveTiers.has(it.tier)) return false;
+      var itFamilies = null;
+      if(plActiveGenreFamilies.size || plExcludeGenreFamilies.size) itFamilies = it.tags.map(genreFamily);
       if(plActiveGenreFamilies.size){
-        var itFamilies = it.tags.map(genreFamily);
         var famOk = plGenreMode === 'all'
           ? Array.from(plActiveGenreFamilies).every(function(f){ return itFamilies.indexOf(f) !== -1; })
           : itFamilies.some(function(f){ return plActiveGenreFamilies.has(f); });
         if(!famOk) return false;
       }
+      if(plExcludeGenreFamilies.size && itFamilies.some(function(f){ return plExcludeGenreFamilies.has(f); })) return false;
       if(plActiveDescriptors.size){
         var descOk = plDescMode === 'all'
           ? Array.from(plActiveDescriptors).every(function(d){ return it.descriptors.indexOf(d) !== -1; })
           : it.descriptors.some(function(d){ return plActiveDescriptors.has(d); });
         if(!descOk) return false;
       }
+      if(plExcludeDescriptors.size && it.descriptors.some(function(d){ return plExcludeDescriptors.has(d); })) return false;
       return true;
     });
   }
@@ -2640,6 +2648,23 @@
     c.className = 'chip' + (active ? ' on' : '');
     c.textContent = label;
     c.addEventListener('click', onClick);
+    return c;
+  }
+
+  // 3-state chip: neutral -> include -> exclude -> neutral. Used for genre/descriptor
+  // filters, where "avoid this" is as useful as "must have this" (e.g. building a
+  // work-safe playlist by excluding "aggressive"/"dark" rather than only including
+  // "energetic"/"upbeat").
+  function plChip3(label, val, includeSet, excludeSet, rebuild){
+    var c = document.createElement('span');
+    c.className = 'chip' + (includeSet.has(val) ? ' on' : excludeSet.has(val) ? ' excluded' : '');
+    c.textContent = label;
+    c.addEventListener('click', function(){
+      if(includeSet.has(val)){ includeSet.delete(val); excludeSet.add(val); }
+      else if(excludeSet.has(val)){ excludeSet.delete(val); }
+      else { includeSet.add(val); }
+      rebuild();
+    });
     return c;
   }
 
@@ -2702,10 +2727,7 @@
     var genreEl = document.getElementById('plGenreChips');
     genreEl.innerHTML = '';
     families.forEach(function(f){
-      genreEl.appendChild(plChip(f, plActiveGenreFamilies.has(f), function(){
-        if(plActiveGenreFamilies.has(f)) plActiveGenreFamilies.delete(f); else plActiveGenreFamilies.add(f);
-        buildPlaylistChips();
-      }));
+      genreEl.appendChild(plChip3(f, f, plActiveGenreFamilies, plExcludeGenreFamilies, buildPlaylistChips));
     });
 
     plModeToggle('plDescModeToggle', plDescMode, function(m){ plDescMode = m; buildPlaylistChips(); });
@@ -2715,10 +2737,7 @@
     var descEl = document.getElementById('plDescChips');
     descEl.innerHTML = '';
     descTop.forEach(function(d){
-      descEl.appendChild(plChip(d, plActiveDescriptors.has(d), function(){
-        if(plActiveDescriptors.has(d)) plActiveDescriptors.delete(d); else plActiveDescriptors.add(d);
-        buildPlaylistChips();
-      }));
+      descEl.appendChild(plChip3(d, d, plActiveDescriptors, plExcludeDescriptors, buildPlaylistChips));
     });
 
     plRenderMatchList();
