@@ -464,6 +464,9 @@
           <span>Descriptors <span class="pl-field-hint">(click: include, click again: avoid, click again: clear)</span></span>
           <span class="pl-mode-toggle" id="plDescModeToggle"></span>
         </div>
+        <div class="search-row" style="margin-bottom:8px;">
+          <input type="text" id="plDescSearch" placeholder="Search all descriptors&hellip; (e.g. uplifting, aggressive) &mdash; showing most common by default">
+        </div>
         <div class="chip-row" id="plDescChips"></div>
       </div>
 
@@ -2731,12 +2734,32 @@
     });
 
     plModeToggle('plDescModeToggle', plDescMode, function(m){ plDescMode = m; buildPlaylistChips(); });
+    document.getElementById('plDescSearch').oninput = buildPlaylistChips; // property assign, not addEventListener, so re-running this doesn't stack duplicate listeners
     var descFreq = {};
     ALL.forEach(function(it){ it.descriptors.forEach(function(d){ descFreq[d] = (descFreq[d]||0) + 1; }); });
-    var descTop = Object.keys(descFreq).sort(function(a,b){ return descFreq[b]-descFreq[a]; }).slice(0, 24);
+    var descAllSorted = Object.keys(descFreq).sort(function(a,b){ return descFreq[b]-descFreq[a]; });
+    var descQuery = document.getElementById('plDescSearch').value.trim().toLowerCase();
+    var descShown;
+    if(descQuery){
+      descShown = descAllSorted.filter(function(d){ return d.toLowerCase().indexOf(descQuery) !== -1; }).slice(0, 40);
+    } else {
+      descShown = descAllSorted.slice(0, 24);
+    }
+    // keep any already-selected (include or exclude) descriptor visible even if the
+    // search/frequency cutoff would otherwise hide it, so picks never vanish silently
+    var descShownSet = new Set(descShown);
+    Array.from(plActiveDescriptors).concat(Array.from(plExcludeDescriptors)).forEach(function(d){
+      if(!descShownSet.has(d)){ descShown.push(d); descShownSet.add(d); }
+    });
     var descEl = document.getElementById('plDescChips');
     descEl.innerHTML = '';
-    descTop.forEach(function(d){
+    if(descShown.length === 0){
+      var noneEl = document.createElement('div');
+      noneEl.className = 'stats-none';
+      noneEl.textContent = 'No descriptors match "' + descQuery + '"';
+      descEl.appendChild(noneEl);
+    }
+    descShown.forEach(function(d){
       descEl.appendChild(plChip3(d, d, plActiveDescriptors, plExcludeDescriptors, buildPlaylistChips));
     });
 
