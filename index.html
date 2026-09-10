@@ -276,9 +276,16 @@
   .pl-field{ margin-bottom:16px; }
   .pl-field-label{
     font-family:'Space Mono', monospace; font-size:11px; text-transform:uppercase; letter-spacing:.06em;
-    color:var(--ink-soft2); margin-bottom:7px;
+    color:var(--ink-soft2); margin-bottom:7px; display:flex; align-items:center; justify-content:space-between; gap:10px;
   }
   .pl-field-hint{ text-transform:none; letter-spacing:0; opacity:.8; }
+  .pl-mode-toggle{ display:inline-flex; gap:4px; flex:none; }
+  .pl-mode-toggle button{
+    font-family:'Space Mono', monospace; font-size:10px; text-transform:none; letter-spacing:0;
+    padding:2px 9px; border-radius:999px; border:1px solid var(--ink-3); background:var(--ink-2);
+    color:var(--ink-soft); cursor:pointer;
+  }
+  .pl-mode-toggle button.on{ color:var(--paper); border-color:var(--riso); background:color-mix(in srgb, var(--riso) 15%, transparent); }
   .pl-public-toggle{
     display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--ink-soft);
     margin:10px 0 16px; cursor:pointer;
@@ -439,11 +446,17 @@
         <div class="chip-row" id="plYearChips"></div>
       </div>
       <div class="pl-field">
-        <div class="pl-field-label">Genre families <span class="pl-field-hint">(none selected = all)</span></div>
+        <div class="pl-field-label">
+          <span>Genre families <span class="pl-field-hint">(none selected = all)</span></span>
+          <span class="pl-mode-toggle" id="plGenreModeToggle"></span>
+        </div>
         <div class="chip-row" id="plGenreChips"></div>
       </div>
       <div class="pl-field">
-        <div class="pl-field-label">Descriptors <span class="pl-field-hint">(none selected = all)</span></div>
+        <div class="pl-field-label">
+          <span>Descriptors <span class="pl-field-hint">(none selected = all)</span></span>
+          <span class="pl-mode-toggle" id="plDescModeToggle"></span>
+        </div>
         <div class="chip-row" id="plDescChips"></div>
       </div>
 
@@ -2137,6 +2150,8 @@
   var plActiveGenreFamilies = new Set();
   var plActiveDescriptors = new Set();
   var plRating = 'keep';
+  var plGenreMode = 'any'; // 'any' = at least one selected family present, 'all' = every selected family present
+  var plDescMode = 'any';  // same idea for descriptors
 
   function plMatches(){
     return ALL.filter(function(it){
@@ -2145,9 +2160,32 @@
         if(!s || s.rating !== plRating) return false;
       }
       if(plActiveYears.size && !plActiveYears.has(it.year)) return false;
-      if(plActiveGenreFamilies.size && !it.tags.some(function(t){ return plActiveGenreFamilies.has(genreFamily(t)); })) return false;
-      if(plActiveDescriptors.size && !it.descriptors.some(function(d){ return plActiveDescriptors.has(d); })) return false;
+      if(plActiveGenreFamilies.size){
+        var itFamilies = it.tags.map(genreFamily);
+        var famOk = plGenreMode === 'all'
+          ? Array.from(plActiveGenreFamilies).every(function(f){ return itFamilies.indexOf(f) !== -1; })
+          : itFamilies.some(function(f){ return plActiveGenreFamilies.has(f); });
+        if(!famOk) return false;
+      }
+      if(plActiveDescriptors.size){
+        var descOk = plDescMode === 'all'
+          ? Array.from(plActiveDescriptors).every(function(d){ return it.descriptors.indexOf(d) !== -1; })
+          : it.descriptors.some(function(d){ return plActiveDescriptors.has(d); });
+        if(!descOk) return false;
+      }
       return true;
+    });
+  }
+
+  function plModeToggle(containerId, current, onChange){
+    var el = document.getElementById(containerId);
+    el.innerHTML = '';
+    [['any','Any'],['all','All']].forEach(function(m){
+      var b = document.createElement('button');
+      b.className = current === m[0] ? 'on' : '';
+      b.textContent = m[1];
+      b.addEventListener('click', function(){ onChange(m[0]); });
+      el.appendChild(b);
     });
   }
 
@@ -2204,6 +2242,7 @@
       }));
     });
 
+    plModeToggle('plGenreModeToggle', plGenreMode, function(m){ plGenreMode = m; buildPlaylistChips(); });
     var families = Array.from(new Set(ALL.map(function(it){ return it.tags.map(genreFamily); }).flat())).sort();
     var genreEl = document.getElementById('plGenreChips');
     genreEl.innerHTML = '';
@@ -2214,6 +2253,7 @@
       }));
     });
 
+    plModeToggle('plDescModeToggle', plDescMode, function(m){ plDescMode = m; buildPlaylistChips(); });
     var descFreq = {};
     ALL.forEach(function(it){ it.descriptors.forEach(function(d){ descFreq[d] = (descFreq[d]||0) + 1; }); });
     var descTop = Object.keys(descFreq).sort(function(a,b){ return descFreq[b]-descFreq[a]; }).slice(0, 24);
