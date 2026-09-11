@@ -367,6 +367,9 @@
       <div class="chip-row" id="tierChips"></div>
       <div class="chip-row" id="statusChips"></div>
       <div class="chip-row" id="genreChips"></div>
+      <div class="search-row" style="margin:2px 0 6px;">
+        <input type="text" id="descriptorSearchInput" placeholder="Search descriptors&hellip;">
+      </div>
       <div class="chip-row" id="descriptorChips"></div>
       <p class="filter-note">Descriptors only cover Confirmed favorites &amp; Best discoveries &mdash; filtering by one hides Worth a Shot items</p>
     </div>
@@ -1683,6 +1686,7 @@
     statusChips: document.getElementById('statusChips'),
     genreChips: document.getElementById('genreChips'),
     descriptorChips: document.getElementById('descriptorChips'),
+    descriptorSearch: document.getElementById('descriptorSearchInput'),
     progNum: document.getElementById('progNum'),
     progTotal: document.getElementById('progTotal'),
     progAllNum: document.getElementById('progAllNum'),
@@ -1852,14 +1856,31 @@
       els.genreChips.appendChild(more);
     }
 
+    els.descriptorSearch.oninput = function(){ buildChips(); syncChipVisuals(); }; // property assign, not addEventListener, so re-running this doesn't stack duplicate listeners
     var allDescriptors = computeTopDescriptors(Infinity);
-    var shownDescriptors = descriptorsExpanded ? allDescriptors : allDescriptors.slice(0, DESCRIPTOR_CHIP_COUNT);
+    var descQuery = els.descriptorSearch.value.trim().toLowerCase();
+    var shownDescriptors;
+    if(descQuery){
+      shownDescriptors = allDescriptors.filter(function(d){ return d.toLowerCase().indexOf(descQuery) !== -1; });
+    } else {
+      shownDescriptors = descriptorsExpanded ? allDescriptors : allDescriptors.slice(0, DESCRIPTOR_CHIP_COUNT);
+    }
+    // keep any already-active descriptor visible even if the search or the collapsed
+    // top-N view would otherwise hide it, so a pick never vanishes silently
+    var shownSet = new Set(shownDescriptors);
+    activeDescriptors.forEach(function(d){ if(!shownSet.has(d)){ shownDescriptors.push(d); shownSet.add(d); } });
     els.descriptorChips.innerHTML = '';
     if(allDescriptors.length){
       var dLabel = document.createElement('span');
       dLabel.style.cssText = 'font-family:\'Space Mono\';font-size:10.5px;color:var(--ink-soft2);align-self:center;margin-right:2px;';
-      dLabel.textContent = 'Descriptor (' + allDescriptors.length + '):';
+      dLabel.textContent = descQuery ? ('Matching (' + shownDescriptors.length + '):') : ('Descriptor (' + allDescriptors.length + '):');
       els.descriptorChips.appendChild(dLabel);
+    }
+    if(descQuery && shownDescriptors.length === 0){
+      var dNone = document.createElement('span');
+      dNone.className = 'stats-none';
+      dNone.textContent = 'No descriptors match "' + descQuery + '"';
+      els.descriptorChips.appendChild(dNone);
     }
     shownDescriptors.forEach(function(d){
       var c = document.createElement('span');
@@ -1872,7 +1893,7 @@
       });
       els.descriptorChips.appendChild(c);
     });
-    if(allDescriptors.length > DESCRIPTOR_CHIP_COUNT){
+    if(!descQuery && allDescriptors.length > DESCRIPTOR_CHIP_COUNT){
       var dMore = document.createElement('span');
       dMore.className = 'chip';
       dMore.style.borderStyle = 'dashed';
