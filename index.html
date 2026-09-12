@@ -506,6 +506,8 @@
     <div id="spotifyConnected" hidden>
       <p class="stats-sub">Connected as <b id="spotifyUserName"></b> &middot; <a href="#" id="spotifyDisconnectBtn">disconnect</a></p>
 
+      <button class="icon-btn" id="plSyncFromListBtn" style="margin-bottom:14px;">&#8635; Sync filters from List view</button>
+
       <div class="pl-field">
         <div class="pl-field-label">Rating</div>
         <div class="chip-row" id="plRatingChips"></div>
@@ -3097,6 +3099,30 @@
 
     plRenderMatchList();
   }
+
+  // Pulls the List view's current filters into the Playlist builder. Opt-in
+  // (a button, not automatic on every tab switch) so an already-customized
+  // playlist filter set never gets silently overwritten by glancing back at
+  // the List view. "All active" in the List view's year/tier maps means the
+  // same as an empty Set here (both mean "no filter").
+  function syncPlaylistFiltersFromList(){
+    var allYearsActive = YEARS.every(function(y){ return activeYears[y]; });
+    plActiveYears = allYearsActive ? new Set() : new Set(YEARS.filter(function(y){ return activeYears[y]; }));
+    var allTiersActive = TIERS.every(function(t){ return activeTiers[t]; });
+    plActiveTiers = allTiersActive ? new Set() : new Set(TIERS.filter(function(t){ return activeTiers[t]; }));
+    plActiveGenreFamilies = new Set(activeGenreFamilies);
+    plExcludeGenreFamilies = new Set(excludeGenreFamilies);
+    plActiveDescriptors = new Set(activeDescriptors);
+    plExcludeDescriptors = new Set(excludeDescriptors);
+    plGenreMode = genreMode;
+    plDescMode = descMode;
+    // statusFilter has no clean equivalent for 'all'/'unlistened' in plRating
+    // (which has no "unheard" concept), so only carry over an unambiguous match.
+    if(statusFilter === 'keep' || statusFilter === 'meh' || statusFilter === 'toss') plRating = statusFilter;
+    buildPlaylistChips();
+    showToast('Synced filters from the List view');
+  }
+  document.getElementById('plSyncFromListBtn').addEventListener('click', syncPlaylistFiltersFromList);
   // SYNC:END playlist-filters
 
   function renderPlaylistsView(){
