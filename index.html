@@ -103,6 +103,11 @@
     white-space:nowrap;
   }
   .icon-btn:hover{ border-color:var(--riso); }
+  .sort-select{
+    flex:none; background:var(--ink-2); border:1px solid var(--ink-3); color:var(--paper);
+    font-family:'Space Mono'; font-size:12px; padding:9px 10px; border-radius:8px; cursor:pointer;
+  }
+  .sort-select:hover{ border-color:var(--riso); }
 
   .chip-row{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
   #filterPanel{ max-height:min(46vh, 360px); overflow-y:auto; padding-right:4px; }
@@ -157,8 +162,9 @@
   #descriptorChips .chip{ color:var(--vibe); border-color:color-mix(in srgb, var(--vibe) 40%, var(--ink-3)); }
   #descriptorChips .chip.on{ color:var(--paper); border-color:var(--vibe); background:color-mix(in srgb, var(--vibe) 18%, transparent); }
 
-  /* 3-state playlist filter chips: neutral -> include (violet/teal, above) -> exclude (red, below) -> neutral */
-  .chip.excluded{ color:var(--paper); border-color:var(--toss); background:color-mix(in srgb, var(--toss) 18%, transparent); text-decoration:line-through; text-decoration-color:color-mix(in srgb, var(--toss) 70%, transparent); }
+  /* 3-state filter chips: neutral -> include (violet/teal, above) -> exclude (red, below) -> neutral.
+     These need to out-specificity the #id .chip base-color rules above, so they're repeated per container. */
+  .chip.excluded, #genreChips .chip.excluded, #descriptorChips .chip.excluded{ color:var(--paper); border-color:var(--toss); background:color-mix(in srgb, var(--toss) 18%, transparent); text-decoration:line-through; text-decoration-color:color-mix(in srgb, var(--toss) 70%, transparent); }
 
   .progress-row{
     display:flex; justify-content:space-between; align-items:baseline;
@@ -203,6 +209,9 @@
   .meta .top-row{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
   .meta .album{ font-weight:600; font-size:14px; }
   .meta .yr{ font-family:'Space Mono'; font-size:10px; color:var(--ink-soft2); border:1px solid var(--ink-2); padding:1px 6px; border-radius:999px; }
+  .meta .tier-badge[data-tier-badge="Confirmed favorites"]{ color:var(--keep); border-color:color-mix(in srgb, var(--keep) 45%, var(--ink-3)); }
+  .meta .tier-badge[data-tier-badge="Best new discoveries"]{ color:var(--riso); border-color:color-mix(in srgb, var(--riso) 45%, var(--ink-3)); }
+  .meta .tier-badge[data-tier-badge="Worth a shot"]{ color:var(--meh); border-color:color-mix(in srgb, var(--meh) 45%, var(--ink-3)); }
   .meta .name{ font-size:12.5px; color:var(--ink-soft); margin-top:1px; }
   .meta .tags{ margin-top:4px; display:flex; flex-wrap:wrap; gap:5px; }
   .tag{ font-family:'Space Mono', monospace; font-size:9.5px; color:var(--riso); border:1px solid color-mix(in srgb, var(--riso) 32%, var(--ink-2)); padding:1px 7px; border-radius:999px; }
@@ -349,6 +358,13 @@
   <div class="toolbar">
     <div class="search-row">
       <input type="text" id="search" placeholder="Search artist, album, genre&hellip;">
+      <select class="sort-select" id="sortSelect" title="Sort albums">
+        <option value="year-desc">Sort: Year (newest)</option>
+        <option value="year-asc">Sort: Year (oldest)</option>
+        <option value="artist-az">Sort: Artist A&rarr;Z</option>
+        <option value="album-az">Sort: Album A&rarr;Z</option>
+        <option value="rating">Sort: Rating (Keep first)</option>
+      </select>
       <button class="icon-btn" id="surpriseBtn">🎲 Surprise me</button>
       <button class="icon-btn" id="copyBtn">Copy Keeps</button>
       <button class="icon-btn" id="spotgenBtn">Copy for Spotgen</button>
@@ -1676,6 +1692,7 @@
 
   var YEARS = [2026,2025,2024,2023,2022,2021,2020,2019,2018,2017,2016,2015];
   var TIERS = ["Confirmed favorites","Best new discoveries","Worth a shot"];
+  var TIER_SHORT = { "Confirmed favorites":"Confirmed", "Best new discoveries":"Best new", "Worth a shot":"Worth a shot" };
 
   var els = {
     tiers: document.getElementById('tiers'),
@@ -1708,11 +1725,14 @@
   var activeYears = {}; YEARS.forEach(function(y){ activeYears[y]=true; });
   var activeTiers = {}; TIERS.forEach(function(t){ activeTiers[t]=true; });
   var statusFilter = 'all';
+  var sortMode = 'year-desc';
   var activeGenres = new Set();
+  var excludeGenres = new Set();
   var genreMode = 'any'; // 'any' = at least one selected tag present, 'all' = every selected tag present
   var GENRE_CHIP_COUNT = 20;
   var genresExpanded = false;
   var activeDescriptors = new Set();
+  var excludeDescriptors = new Set();
   var descMode = 'any'; // same idea for descriptors
   var DESCRIPTOR_CHIP_COUNT = 20;
   var descriptorsExpanded = false;
@@ -1828,6 +1848,7 @@
       var toggleHost = document.createElement('span');
       toggleHost.id = 'genreModeToggle';
       toggleHost.className = 'pl-mode-toggle';
+      headerRow.title = 'Click a genre chip: include, click again: avoid, click again: clear';
       headerRow.appendChild(label);
       headerRow.appendChild(toggleHost);
       els.genreChips.appendChild(headerRow);
@@ -1847,7 +1868,9 @@
       c.textContent = g.tag;
       c.dataset.genre = g.tag;
       c.addEventListener('click', function(){
-        if(activeGenres.has(g.tag)) activeGenres.delete(g.tag); else activeGenres.add(g.tag);
+        if(activeGenres.has(g.tag)){ activeGenres.delete(g.tag); excludeGenres.add(g.tag); }
+        else if(excludeGenres.has(g.tag)){ excludeGenres.delete(g.tag); }
+        else { activeGenres.add(g.tag); }
         refresh();
       });
       els.genreChips.appendChild(c);
@@ -1875,10 +1898,10 @@
     } else {
       shownDescriptors = descriptorsExpanded ? allDescriptors : allDescriptors.slice(0, DESCRIPTOR_CHIP_COUNT);
     }
-    // keep any already-active descriptor visible even if the search or the collapsed
-    // top-N view would otherwise hide it, so a pick never vanishes silently
+    // keep any already-active or excluded descriptor visible even if the search or the
+    // collapsed top-N view would otherwise hide it, so a pick never vanishes silently
     var shownSet = new Set(shownDescriptors);
-    activeDescriptors.forEach(function(d){ if(!shownSet.has(d)){ shownDescriptors.push(d); shownSet.add(d); } });
+    Array.from(activeDescriptors).concat(Array.from(excludeDescriptors)).forEach(function(d){ if(!shownSet.has(d)){ shownDescriptors.push(d); shownSet.add(d); } });
     els.descriptorChips.innerHTML = '';
     if(allDescriptors.length){
       var dHeaderRow = document.createElement('span');
@@ -1890,6 +1913,7 @@
       var dToggleHost = document.createElement('span');
       dToggleHost.id = 'descModeToggle';
       dToggleHost.className = 'pl-mode-toggle';
+      dHeaderRow.title = 'Click a descriptor chip: include, click again: avoid, click again: clear';
       dHeaderRow.appendChild(dLabel);
       dHeaderRow.appendChild(dToggleHost);
       els.descriptorChips.appendChild(dHeaderRow);
@@ -1907,7 +1931,9 @@
       c.textContent = d;
       c.dataset.descriptor = d;
       c.addEventListener('click', function(){
-        if(activeDescriptors.has(d)) activeDescriptors.delete(d); else activeDescriptors.add(d);
+        if(activeDescriptors.has(d)){ activeDescriptors.delete(d); excludeDescriptors.add(d); }
+        else if(excludeDescriptors.has(d)){ excludeDescriptors.delete(d); }
+        else { activeDescriptors.add(d); }
         refresh();
       });
       els.descriptorChips.appendChild(c);
@@ -1961,9 +1987,11 @@
     });
     Array.prototype.forEach.call(els.genreChips.querySelectorAll('.chip[data-genre]'), function(c){
       c.classList.toggle('on', activeGenres.has(c.dataset.genre));
+      c.classList.toggle('excluded', excludeGenres.has(c.dataset.genre));
     });
     Array.prototype.forEach.call(els.descriptorChips.querySelectorAll('.chip[data-descriptor]'), function(c){
       c.classList.toggle('on', activeDescriptors.has(c.dataset.descriptor));
+      c.classList.toggle('excluded', excludeDescriptors.has(c.dataset.descriptor));
     });
     updateFilterBadge();
   }
@@ -1973,8 +2001,8 @@
     YEARS.forEach(function(y){ if(!activeYears[y]) n++; });
     TIERS.forEach(function(t){ if(!activeTiers[t]) n++; });
     if(statusFilter !== 'all') n++;
-    n += activeGenres.size;
-    n += activeDescriptors.size;
+    n += activeGenres.size + excludeGenres.size;
+    n += activeDescriptors.size + excludeDescriptors.size;
     var badge = document.getElementById('filterCount');
     badge.textContent = n;
     badge.hidden = n === 0;
@@ -1994,12 +2022,14 @@
   }
 
   function matchesGenre(it){
+    if(excludeGenres.size && it.tags.some(function(t){ return excludeGenres.has(t); })) return false;
     if(activeGenres.size === 0) return true;
     if(genreMode === 'all') return Array.from(activeGenres).every(function(t){ return it.tags.indexOf(t) !== -1; });
     return it.tags.some(function(t){ return activeGenres.has(t); });
   }
 
   function matchesDescriptor(it){
+    if(excludeDescriptors.size && it.descriptors.some(function(d){ return excludeDescriptors.has(d); })) return false;
     if(activeDescriptors.size === 0) return true;
     if(descMode === 'all') return Array.from(activeDescriptors).every(function(d){ return it.descriptors.indexOf(d) !== -1; });
     return it.descriptors.some(function(d){ return activeDescriptors.has(d); });
@@ -2017,33 +2047,65 @@
     });
   }
 
+  var RATING_SORT_ORDER = { keep:0, meh:1, toss:2 };
+
   function render(){
     syncChipVisuals();
     var visible = visibleItems();
     els.tiers.innerHTML = '';
     els.empty.hidden = visible.length !== 0;
 
-    YEARS.forEach(function(year){
-      if(!activeYears[year]) return;
-      TIERS.forEach(function(tier){
-        if(!activeTiers[tier]) return;
-        var groupItems = visible.filter(function(it){ return it.year===year && it.tier===tier; });
-        if(groupItems.length===0) return;
+    if(sortMode === 'year-desc' || sortMode === 'year-asc'){
+      var years = sortMode === 'year-asc' ? YEARS.slice().reverse() : YEARS;
+      years.forEach(function(year){
+        if(!activeYears[year]) return;
+        TIERS.forEach(function(tier){
+          if(!activeTiers[tier]) return;
+          var groupItems = visible.filter(function(it){ return it.year===year && it.tier===tier; });
+          if(groupItems.length===0) return;
 
-        var sec = document.createElement('section');
-        sec.className = 'tier';
-        sec.dataset.tier = tier;
-        var head = document.createElement('div');
-        head.className = 'tier-head';
-        head.innerHTML = '<h2>' + year + ' &middot; ' + tier + '</h2><span>' + groupItems.length + '</span>';
-        sec.appendChild(head);
+          var sec = document.createElement('section');
+          sec.className = 'tier';
+          sec.dataset.tier = tier;
+          var head = document.createElement('div');
+          head.className = 'tier-head';
+          head.innerHTML = '<h2>' + year + ' &middot; ' + tier + '</h2><span>' + groupItems.length + '</span>';
+          sec.appendChild(head);
 
-        groupItems.forEach(function(it){
-          sec.appendChild(renderItem(it));
+          groupItems.forEach(function(it){
+            sec.appendChild(renderItem(it));
+          });
+          els.tiers.appendChild(sec);
         });
-        els.tiers.appendChild(sec);
       });
-    });
+    } else {
+      // Artist/Album/Rating sorts flatten across years & tiers, since alphabetical or
+      // rating order doesn't map onto the year->tier grouping at all. renderItem()'s
+      // tier badge carries the tier context that the section headers normally would.
+      var sorted = visible.slice();
+      if(sortMode === 'artist-az'){
+        sorted.sort(function(a,b){ return a.artist.localeCompare(b.artist) || a.album.localeCompare(b.album); });
+      } else if(sortMode === 'album-az'){
+        sorted.sort(function(a,b){ return a.album.localeCompare(b.album) || a.artist.localeCompare(b.artist); });
+      } else if(sortMode === 'rating'){
+        sorted.sort(function(a,b){
+          var ra = (state[a.id] && state[a.id].rating) ? RATING_SORT_ORDER[state[a.id].rating] : 3;
+          var rb = (state[b.id] && state[b.id].rating) ? RATING_SORT_ORDER[state[b.id].rating] : 3;
+          if(ra !== rb) return ra - rb;
+          return a.artist.localeCompare(b.artist);
+        });
+      }
+      if(sorted.length){
+        var flatSec = document.createElement('section');
+        flatSec.className = 'tier';
+        var flatHead = document.createElement('div');
+        flatHead.className = 'tier-head';
+        flatHead.innerHTML = '<h2>' + sorted.length + ' album' + (sorted.length===1?'':'s') + '</h2>';
+        flatSec.appendChild(flatHead);
+        sorted.forEach(function(it){ flatSec.appendChild(renderItem(it)); });
+        els.tiers.appendChild(flatSec);
+      }
+    }
 
     var done = 0, doneAll = 0;
     var c = { keep:0, meh:0, toss:0 };
@@ -2384,7 +2446,8 @@
     meta.className = 'meta';
     var noteHtml = it.note ? '<div class="note">' + it.note + '</div>' : '';
     meta.innerHTML =
-      '<div class="top-row"><span class="album">' + it.album + '</span><span class="yr">' + it.year + '</span></div>' +
+      '<div class="top-row"><span class="album">' + it.album + '</span><span class="yr">' + it.year + '</span>' +
+        '<span class="yr tier-badge" data-tier-badge="' + it.tier + '">' + (TIER_SHORT[it.tier] || it.tier) + '</span></div>' +
       '<div class="name">' + it.artist + '</div>' +
       '<div class="tags">' + it.tags.map(function(t){ return '<span class="tag">'+t+'</span>'; }).join('') +
         it.descriptors.map(function(t){ return '<span class="tag tag-desc">'+t+'</span>'; }).join('') + '</div>' +
@@ -2453,6 +2516,10 @@
 
   els.search.addEventListener('input', function(){
     query = els.search.value.trim().toLowerCase();
+    refresh();
+  });
+  document.getElementById('sortSelect').addEventListener('change', function(){
+    sortMode = this.value;
     refresh();
   });
   Array.prototype.forEach.call(document.querySelectorAll('#viewToggle button'), function(b){
