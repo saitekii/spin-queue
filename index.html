@@ -170,6 +170,7 @@
   .bar{ height:5px; border-radius:4px; background:var(--ink-2); overflow:hidden; margin-bottom:10px; }
   .bar > i{ display:block; height:100%; width:0%; background:var(--riso); transition:width .3s ease; }
 
+  .last-rated-hint{ font-family:'Space Mono', monospace; font-size:10.5px; color:var(--ink-soft2); text-align:center; margin-top:8px; }
   .tallies{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
   .tally{
     font-family:'Space Mono', monospace; font-size:11px; padding:4px 10px; border-radius:999px;
@@ -425,6 +426,7 @@
       <span class="tally meh"><span class="dot"></span>Meh <b id="cMeh">0</b></span>
       <span class="tally toss"><span class="dot"></span>Toss <b id="cToss">0</b></span>
     </div>
+    <div class="last-rated-hint" id="lastRatedHint"></div>
     <button class="icon-btn triage-launch-btn" id="triageBtn">🎯 Triage unrated (0)</button>
   </div>
 
@@ -1762,6 +1764,7 @@
     cKeep: document.getElementById('cKeep'),
     cMeh: document.getElementById('cMeh'),
     cToss: document.getElementById('cToss'),
+    lastRatedHint: document.getElementById('lastRatedHint'),
     copyBtn: document.getElementById('copyBtn'),
     exportRatingsBtn: document.getElementById('exportRatingsBtn'),
     toast: document.getElementById('toast')
@@ -1771,6 +1774,8 @@
   // SYNC:START filter-state
   var db = null;
   var LS_KEY = 'spinQueueProgress_v2';
+  var LAST_RATED_KEY = 'spinQueueLastRatedAt_v1';
+  var lastRatedAt = (function(){ try{ var v = localStorage.getItem(LAST_RATED_KEY); return v ? parseInt(v, 10) : null; }catch(e){ return null; } })();
   var state = {};
   var activeYears = {}; YEARS.forEach(function(y){ activeYears[y]=true; });
   var activeTiers = {}; TIERS.forEach(function(t){ activeTiers[t]=true; });
@@ -1828,6 +1833,22 @@
     if(cur && cur.rating === r){ delete state[id]; }
     else { state[id] = { rating: r }; }
     persist();
+    lastRatedAt = Date.now();
+    try{ localStorage.setItem(LAST_RATED_KEY, String(lastRatedAt)); }catch(e){}
+  }
+
+  function formatRelativeTime(ts){
+    var min = Math.floor((Date.now() - ts) / 60000);
+    if(min < 1) return 'just now';
+    if(min < 60) return min + (min === 1 ? ' min ago' : ' mins ago');
+    var hr = Math.floor(min / 60);
+    if(hr < 24) return hr + (hr === 1 ? ' hour ago' : ' hours ago');
+    var day = Math.floor(hr / 24);
+    if(day < 7) return day + (day === 1 ? ' day ago' : ' days ago');
+    var wk = Math.floor(day / 7);
+    if(wk < 5) return wk + (wk === 1 ? ' week ago' : ' weeks ago');
+    var mo = Math.floor(day / 30);
+    return mo + (mo === 1 ? ' month ago' : ' months ago');
   }
 
   var IS_ANDROID = /Android/i.test(navigator.userAgent);
@@ -2338,6 +2359,7 @@
     els.cKeep.textContent = c.keep;
     els.cMeh.textContent = c.meh;
     els.cToss.textContent = c.toss;
+    els.lastRatedHint.textContent = lastRatedAt ? ('Last rated ' + formatRelativeTime(lastRatedAt)) : 'Nothing rated yet';
 
     var unratedCount = visible.length - done;
     document.getElementById('triageBtn').textContent = '🎯 Triage unrated (' + unratedCount + ')';
