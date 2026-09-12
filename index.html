@@ -557,6 +557,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script>
 (function(){
+  // SYNC:START core-data — scripts/sync_site.js copies this region verbatim
+  // into site/index.html. Only edit it here (the Artifact source); running
+  // the sync script overwrites the same region there. See scripts/README.md.
   // [artist, album, tags, note]
   var RAW = {
     2026: {
@@ -1740,6 +1743,7 @@
   var YEARS = [2026,2025,2024,2023,2022,2021,2020,2019,2018,2017,2016,2015];
   var TIERS = ["Confirmed favorites","Best new discoveries","Worth a shot"];
   var TIER_SHORT = { "Confirmed favorites":"Confirmed", "Best new discoveries":"Best new", "Worth a shot":"Worth a shot" };
+  // SYNC:END core-data
 
   var els = {
     tiers: document.getElementById('tiers'),
@@ -1767,6 +1771,7 @@
   };
   els.progAllTotal.textContent = ALL.length;
 
+  // SYNC:START filter-state
   var db = null;
   var LS_KEY = 'spinQueueProgress_v2';
   var state = {};
@@ -1798,6 +1803,7 @@
   var nodePosCache = {};
   var sim = null;
   var HUB_COUNT = 15;
+  // SYNC:END filter-state
 
   // one-time seed from the Claude artifact's ratings as of the day this page was deployed —
   // only used if this browser has never saved anything locally; every rating from here on
@@ -1811,6 +1817,7 @@
       return SEED_RATINGS;
     }catch(e){ return SEED_RATINGS; }
   }
+  // SYNC:START core-functions
   function saveLocal(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
   function persist(){
     if(db){ db.doc('progress/main').set({ items: state, updatedAt: Date.now() }).catch(function(){ saveLocal(); }); }
@@ -2671,7 +2678,9 @@
     row.appendChild(meta);
     return row;
   }
+  // SYNC:END core-functions
 
+  // SYNC:START theme-and-toolbar
   var THEME_KEY = 'spinQueueTheme';
   var themeToggleBtn = document.getElementById('themeToggle');
   function systemPrefersLight(){
@@ -2770,6 +2779,7 @@
       showToast('Clipboard not available here');
     }
   });
+  // SYNC:END theme-and-toolbar
 
   // Ratings made here live only in this browser's localStorage — unlike the
   // Claude Artifact copy, there's no live DB Claude can read directly. This
@@ -2917,6 +2927,7 @@
     });
   }
 
+  // SYNC:START playlist-filters
   var plActiveYears = new Set();
   var plActiveTiers = new Set();
   var plActiveGenreFamilies = new Set();
@@ -3086,6 +3097,7 @@
 
     plRenderMatchList();
   }
+  // SYNC:END playlist-filters
 
   function renderPlaylistsView(){
     var token = loadSpotifyToken();
@@ -3204,6 +3216,7 @@
 
   handleSpotifyRedirect();
 
+  // SYNC:START migrate-state
   // migrate the old {listened, rating} shape (pre-2026-09 builds) to the current
   // {rating} shape, where absence from `state` means unheard.
   function migrateState(raw){
@@ -3214,6 +3227,7 @@
     });
     return out;
   }
+  // SYNC:END migrate-state
 
   function init(loaded){
     state = migrateState(loaded);
