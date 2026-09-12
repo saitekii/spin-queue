@@ -111,10 +111,6 @@
 
   .chip-row{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
   #filterPanel{ max-height:min(46vh, 360px); overflow-y:auto; padding-right:4px; }
-  .filter-note{
-    font-family:'Space Mono', monospace; font-size:10px; color:var(--ink-soft2);
-    margin:-4px 0 10px; line-height:1.4;
-  }
 
   .filters-toggle{
     width:100%; display:flex; align-items:center; justify-content:center; gap:7px;
@@ -231,6 +227,40 @@
   .rate-btn.sel[data-r="toss"]{ border-color:var(--toss); background:color-mix(in srgb, var(--toss) 15%, transparent); }
   .rate-btn.sel[data-r="meh"]{ border-color:var(--meh); background:color-mix(in srgb, var(--meh) 15%, transparent); }
   .rate-btn.sel[data-r="keep"]{ border-color:var(--keep); background:color-mix(in srgb, var(--keep) 15%, transparent); }
+
+  .triage-launch-btn{ width:100%; margin-top:10px; text-align:center; }
+
+  .triage-overlay{
+    position:fixed; inset:0; z-index:20; background:color-mix(in srgb, var(--ink) 82%, transparent);
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .triage-card{
+    width:100%; max-width:480px; background:var(--ink-2); border:1px solid var(--ink-3); color:var(--paper);
+    border-radius:16px; padding:20px; box-shadow:0 20px 60px rgba(0,0,0,.4);
+  }
+  .triage-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  .triage-top #triageProgress{ font-family:'Space Mono', monospace; font-size:12px; color:var(--ink-soft2); }
+  .triage-close{
+    background:none; border:none; color:var(--ink-soft); font-size:22px; line-height:1; cursor:pointer; padding:2px 6px;
+  }
+  .triage-close:hover{ color:var(--paper); }
+  .triage-body .top-row{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+  .triage-body .album{ font-weight:700; font-size:21px; text-wrap:balance; }
+  .triage-body .name{ font-size:15px; color:var(--ink-soft); margin-top:3px; }
+  .triage-body .tags{ margin-top:10px; display:flex; flex-wrap:wrap; gap:6px; }
+  .triage-body .note{ margin-top:10px; font-size:12.5px; color:var(--ink-soft2); font-style:italic; }
+  .triage-done{ font-size:16px; text-align:center; padding:30px 0; color:var(--ink-soft); }
+  .triage-actions{ display:flex; gap:8px; margin-top:18px; }
+  .triage-actions .rate-btn{
+    flex:1; font-size:13px; padding:12px 0; border-radius:10px; border:1px solid var(--ink-3);
+    display:flex; align-items:center; justify-content:center; gap:6px;
+  }
+  .triage-actions .rate-btn:disabled{ opacity:.4; cursor:default; }
+  .triage-actions .kbd{
+    font-family:'Space Mono', monospace; font-size:10px; border:1px solid currentColor; border-radius:4px;
+    padding:0 4px; opacity:.7;
+  }
+  .triage-hint{ margin-top:12px; text-align:center; font-family:'Space Mono', monospace; font-size:10.5px; color:var(--ink-soft2); }
 
   footer{ text-align:center; font-size:10.5px; color:var(--ink-soft2); margin-top:30px; }
   .toast{
@@ -388,7 +418,6 @@
         <input type="text" id="descriptorSearchInput" placeholder="Search descriptors&hellip;">
       </div>
       <div class="chip-row" id="descriptorChips"></div>
-      <p class="filter-note">Descriptors only cover Confirmed favorites &amp; Best discoveries &mdash; filtering by one hides Worth a Shot items</p>
     </div>
     <div class="progress-row">
       <span>RATED (shown)</span>
@@ -400,9 +429,26 @@
       <span class="tally meh"><span class="dot"></span>Meh <b id="cMeh">0</b></span>
       <span class="tally toss"><span class="dot"></span>Toss <b id="cToss">0</b></span>
     </div>
+    <button class="icon-btn triage-launch-btn" id="triageBtn">🎯 Triage unrated (0)</button>
   </div>
 
   <div id="empty" hidden>Nothing matches. Try clearing filters.</div>
+
+  <div id="triageOverlay" class="triage-overlay" hidden>
+    <div class="triage-card">
+      <div class="triage-top">
+        <span id="triageProgress">1 / 1</span>
+        <button class="triage-close" id="triageCloseBtn" aria-label="Close triage">&times;</button>
+      </div>
+      <div id="triageBody" class="triage-body"></div>
+      <div class="triage-actions">
+        <button class="rate-btn triage-rate-btn" data-r="toss">Toss <span class="kbd">T</span></button>
+        <button class="rate-btn triage-rate-btn" data-r="meh">Meh <span class="kbd">M</span></button>
+        <button class="rate-btn triage-rate-btn" data-r="keep">Keep <span class="kbd">K</span></button>
+      </div>
+      <div class="triage-hint">Keyboard: K / M / T to rate &middot; &rarr; to skip &middot; Esc to exit</div>
+    </div>
+  </div>
   <div id="tiers"></div>
 
   <div id="graphView" hidden>
@@ -1741,6 +1787,10 @@
   var DESCRIPTOR_CHIP_COUNT = 20;
   var descriptorsExpanded = false;
   var query = '';
+  var triageQueue = [];
+  var triageIndex = 0;
+  var triageRatedThisSession = 0;
+  var triageOpen = false;
   var viewMode = 'list';
   var hubMode = 'genre';
   var expandedHubs = new Set();
@@ -1778,6 +1828,67 @@
 
   function ytSearch(it){
     return 'https://music.youtube.com/search?q=' + encodeURIComponent(it.artist + ' ' + it.album);
+  }
+
+  // ---------------------------------------------------------------------
+  // Triage mode: a fullscreen one-album-at-a-time overlay for fast rating,
+  // built off whatever the List view's current filters/sort already match
+  // (see orderedVisibleForTriage/getUnratedVisible below). Always excludes
+  // already-rated albums, regardless of the Status filter — re-reviewing a
+  // rated album is a List-view action, triage is specifically for the
+  // unrated backlog.
+  // ---------------------------------------------------------------------
+  function openTriage(){
+    triageQueue = getUnratedVisible();
+    triageIndex = 0;
+    triageRatedThisSession = 0;
+    if(!triageQueue.length){ showToast('Nothing to triage with current filters'); return; }
+    triageOpen = true;
+    document.getElementById('triageOverlay').hidden = false;
+    renderTriageCard();
+  }
+
+  function closeTriage(){
+    triageOpen = false;
+    document.getElementById('triageOverlay').hidden = true;
+    refresh();
+  }
+
+  function renderTriageCard(){
+    var body = document.getElementById('triageBody');
+    var rateBtns = document.querySelectorAll('.triage-rate-btn');
+    if(triageIndex >= triageQueue.length){
+      document.getElementById('triageProgress').textContent = 'Done';
+      body.innerHTML = '<div class="triage-done">All done — rated ' + triageRatedThisSession +
+        ' album' + (triageRatedThisSession===1?'':'s') + ' this session.</div>';
+      Array.prototype.forEach.call(rateBtns, function(b){ b.disabled = true; });
+      return;
+    }
+    Array.prototype.forEach.call(rateBtns, function(b){ b.disabled = false; });
+    var it = triageQueue[triageIndex];
+    document.getElementById('triageProgress').textContent = (triageIndex + 1) + ' / ' + triageQueue.length;
+    var noteHtml = it.note ? '<div class="note">' + it.note + '</div>' : '';
+    body.innerHTML =
+      '<div class="top-row"><span class="album">' + it.album + '</span><span class="yr">' + it.year + '</span>' +
+        '<span class="yr tier-badge" data-tier-badge="' + it.tier + '">' + (TIER_SHORT[it.tier] || it.tier) + '</span></div>' +
+      '<div class="name">' + it.artist + '</div>' +
+      '<div class="tags">' + it.tags.map(function(t){ return '<span class="tag">'+t+'</span>'; }).join('') +
+        it.descriptors.map(function(t){ return '<span class="tag tag-desc">'+t+'</span>'; }).join('') + '</div>' +
+      noteHtml;
+  }
+
+  function triageRate(r){
+    if(triageIndex >= triageQueue.length) return;
+    setRating(triageQueue[triageIndex].id, r);
+    triageRatedThisSession++;
+    triageIndex++;
+    renderTriageCard();
+  }
+
+  function triageSkip(){
+    if(triageIndex >= triageQueue.length) return;
+    triageIndex++;
+    renderTriageCard();
   }
 
   function showToast(msg){
@@ -2097,6 +2208,48 @@
 
   var RATING_SORT_ORDER = { keep:0, meh:1, toss:2 };
 
+  // Shared by render()'s flat-sort branch and the triage queue, so both stay
+  // in sync with the same comparators instead of drifting apart over time.
+  function sortFlatByMode(items){
+    var sorted = items.slice();
+    if(sortMode === 'artist-az'){
+      sorted.sort(function(a,b){ return a.artist.localeCompare(b.artist) || a.album.localeCompare(b.album); });
+    } else if(sortMode === 'album-az'){
+      sorted.sort(function(a,b){ return a.album.localeCompare(b.album) || a.artist.localeCompare(b.artist); });
+    } else if(sortMode === 'rating'){
+      sorted.sort(function(a,b){
+        var ra = (state[a.id] && state[a.id].rating) ? RATING_SORT_ORDER[state[a.id].rating] : 3;
+        var rb = (state[b.id] && state[b.id].rating) ? RATING_SORT_ORDER[state[b.id].rating] : 3;
+        if(ra !== rb) return ra - rb;
+        return a.artist.localeCompare(b.artist);
+      });
+    }
+    return sorted;
+  }
+
+  // Same ordering the List view currently displays, but flattened into one
+  // array (no section headers) — used to build the triage queue.
+  function orderedVisibleForTriage(){
+    var visible = visibleItems();
+    if(sortMode === 'year-desc' || sortMode === 'year-asc'){
+      var years = sortMode === 'year-asc' ? YEARS.slice().reverse() : YEARS;
+      var out = [];
+      years.forEach(function(year){
+        if(!activeYears[year]) return;
+        TIERS.forEach(function(tier){
+          if(!activeTiers[tier]) return;
+          visible.filter(function(it){ return it.year===year && it.tier===tier; }).forEach(function(it){ out.push(it); });
+        });
+      });
+      return out;
+    }
+    return sortFlatByMode(visible);
+  }
+
+  function getUnratedVisible(){
+    return orderedVisibleForTriage().filter(function(it){ return !(state[it.id] && state[it.id].rating); });
+  }
+
   function render(){
     syncChipVisuals();
     var visible = visibleItems();
@@ -2130,19 +2283,7 @@
       // Artist/Album/Rating sorts flatten across years & tiers, since alphabetical or
       // rating order doesn't map onto the year->tier grouping at all. renderItem()'s
       // tier badge carries the tier context that the section headers normally would.
-      var sorted = visible.slice();
-      if(sortMode === 'artist-az'){
-        sorted.sort(function(a,b){ return a.artist.localeCompare(b.artist) || a.album.localeCompare(b.album); });
-      } else if(sortMode === 'album-az'){
-        sorted.sort(function(a,b){ return a.album.localeCompare(b.album) || a.artist.localeCompare(b.artist); });
-      } else if(sortMode === 'rating'){
-        sorted.sort(function(a,b){
-          var ra = (state[a.id] && state[a.id].rating) ? RATING_SORT_ORDER[state[a.id].rating] : 3;
-          var rb = (state[b.id] && state[b.id].rating) ? RATING_SORT_ORDER[state[b.id].rating] : 3;
-          if(ra !== rb) return ra - rb;
-          return a.artist.localeCompare(b.artist);
-        });
-      }
+      var sorted = sortFlatByMode(visible);
       if(sorted.length){
         var flatSec = document.createElement('section');
         flatSec.className = 'tier';
@@ -2169,6 +2310,9 @@
     els.cKeep.textContent = c.keep;
     els.cMeh.textContent = c.meh;
     els.cToss.textContent = c.toss;
+
+    var unratedCount = visible.length - done;
+    document.getElementById('triageBtn').textContent = '🎯 Triage unrated (' + unratedCount + ')';
   }
 
   function refresh(){
@@ -2597,6 +2741,21 @@
       el.scrollIntoView({ behavior:'smooth', block:'center' });
       el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
     }
+  });
+
+  document.getElementById('triageBtn').addEventListener('click', openTriage);
+  document.getElementById('triageCloseBtn').addEventListener('click', closeTriage);
+  Array.prototype.forEach.call(document.querySelectorAll('.triage-rate-btn'), function(b){
+    b.addEventListener('click', function(){ triageRate(b.dataset.r); });
+  });
+  document.addEventListener('keydown', function(e){
+    if(!triageOpen) return;
+    var k = e.key.toLowerCase();
+    if(k === 'k'){ e.preventDefault(); triageRate('keep'); }
+    else if(k === 'm'){ e.preventDefault(); triageRate('meh'); }
+    else if(k === 't'){ e.preventDefault(); triageRate('toss'); }
+    else if(k === 'arrowright'){ e.preventDefault(); triageSkip(); }
+    else if(k === 'escape'){ e.preventDefault(); closeTriage(); }
   });
 
   els.copyBtn.addEventListener('click', function(){
