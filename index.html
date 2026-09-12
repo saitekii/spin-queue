@@ -236,8 +236,10 @@
     width:100%; max-width:480px; background:var(--ink-2); border:1px solid var(--ink-3); color:var(--paper);
     border-radius:16px; padding:20px; box-shadow:0 20px 60px rgba(0,0,0,.4);
   }
-  .triage-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  .triage-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
   .triage-top #triageProgress{ font-family:'Space Mono', monospace; font-size:12px; color:var(--ink-soft2); }
+  .triage-sort-row{ margin-bottom:14px; }
+  .triage-sort-row .sort-select{ width:100%; }
   .triage-close{
     background:none; border:none; color:var(--ink-soft); font-size:22px; line-height:1; cursor:pointer; padding:2px 6px;
   }
@@ -437,6 +439,14 @@
       <div class="triage-top">
         <span id="triageProgress">1 / 1</span>
         <button class="triage-close" id="triageCloseBtn" aria-label="Close triage">&times;</button>
+      </div>
+      <div class="triage-sort-row">
+        <select class="sort-select" id="triageSortSelect" title="Sort order">
+          <option value="year-desc">Sort: Year (newest)</option>
+          <option value="year-asc">Sort: Year (oldest)</option>
+          <option value="artist-az">Sort: Artist A&rarr;Z</option>
+          <option value="album-az">Sort: Album A&rarr;Z</option>
+        </select>
       </div>
       <div id="triageBody" class="triage-body"></div>
       <div class="triage-actions">
@@ -1978,7 +1988,24 @@
     if(!triageQueue.length){ showToast('Nothing to triage with current filters'); return; }
     triageOpen = true;
     document.getElementById('triageOverlay').hidden = false;
+    // "rating" isn't offered here: every card in the queue is unrated by definition,
+    // so that sort would just silently fall back to Artist A-Z with no visible effect.
+    document.getElementById('triageSortSelect').value = (sortMode === 'rating') ? 'artist-az' : sortMode;
     renderTriageCard();
+  }
+
+  // Shared by the List view's sort dropdown and the one inside Triage, so
+  // picking a sort order in either place is reflected in both immediately.
+  function applySortMode(mode){
+    sortMode = mode;
+    document.getElementById('sortSelect').value = mode;
+    refresh();
+    if(triageOpen){
+      triageQueue = getUnratedVisible();
+      triageIndex = 0;
+      document.getElementById('triageSortSelect').value = (mode === 'rating') ? 'artist-az' : mode;
+      renderTriageCard();
+    }
   }
 
   function closeTriage(){
@@ -2862,8 +2889,10 @@
     refresh();
   });
   document.getElementById('sortSelect').addEventListener('change', function(){
-    sortMode = this.value;
-    refresh();
+    applySortMode(this.value);
+  });
+  document.getElementById('triageSortSelect').addEventListener('change', function(){
+    applySortMode(this.value);
   });
   Array.prototype.forEach.call(document.querySelectorAll('#viewToggle button'), function(b){
     b.addEventListener('click', function(){ setViewMode(b.dataset.view); });
