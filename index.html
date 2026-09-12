@@ -1883,7 +1883,8 @@
       '<div class="name">' + it.artist + '</div>' +
       '<div class="tags">' + it.tags.map(function(t){ return '<span class="tag">'+t+'</span>'; }).join('') +
         it.descriptors.map(function(t){ return '<span class="tag tag-desc">'+t+'</span>'; }).join('') + '</div>' +
-      noteHtml;
+      noteHtml +
+      '<div class="actions"><a class="search-link" href="' + ytSearch(it) + '" target="_blank" rel="noopener noreferrer">YT Music ▸</a></div>';
   }
 
   function triageRate(r){
