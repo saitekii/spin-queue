@@ -1839,6 +1839,10 @@
     return 'https://music.youtube.com/search?q=' + encodeURIComponent(it.artist + ' ' + it.album);
   }
 
+  function spotifySearch(it){
+    return 'https://open.spotify.com/search/' + encodeURIComponent(it.artist + ' ' + it.album);
+  }
+
   // ---------------------------------------------------------------------
   // Triage mode: a fullscreen one-album-at-a-time overlay for fast rating,
   // built off whatever the List view's current filters/sort already match
@@ -1884,7 +1888,10 @@
       '<div class="tags">' + it.tags.map(function(t){ return '<span class="tag">'+t+'</span>'; }).join('') +
         it.descriptors.map(function(t){ return '<span class="tag tag-desc">'+t+'</span>'; }).join('') + '</div>' +
       noteHtml +
-      '<div class="actions"><a class="search-link" href="' + ytSearch(it) + '" target="_blank" rel="noopener noreferrer">YT Music ▸</a></div>';
+      '<div class="actions">' +
+        '<a class="search-link" href="' + ytSearch(it) + '" target="_blank" rel="noopener noreferrer">YT Music ▸</a>' +
+        '<a class="search-link" href="' + spotifySearch(it) + '" target="_blank" rel="noopener noreferrer">Spotify ▸</a>' +
+      '</div>';
   }
 
   function triageRate(r){
@@ -2623,6 +2630,10 @@
     link.className = 'search-link'; link.href = ytSearch(it); link.target = '_blank'; link.rel = 'noopener noreferrer';
     link.textContent = 'YT Music ▸';
     actions.appendChild(link);
+    var spLink = document.createElement('a');
+    spLink.className = 'search-link'; spLink.href = spotifySearch(it); spLink.target = '_blank'; spLink.rel = 'noopener noreferrer';
+    spLink.textContent = 'Spotify ▸';
+    actions.appendChild(spLink);
 
     ['toss','meh','keep'].forEach(function(r){
       var b = document.createElement('button');
@@ -2664,6 +2675,13 @@
     link.rel = 'noopener noreferrer';
     link.textContent = 'YT Music ▸';
     actions.appendChild(link);
+    var spLink = document.createElement('a');
+    spLink.className = 'search-link';
+    spLink.href = spotifySearch(it);
+    spLink.target = '_blank';
+    spLink.rel = 'noopener noreferrer';
+    spLink.textContent = 'Spotify ▸';
+    actions.appendChild(spLink);
 
     ['toss','meh','keep'].forEach(function(r){
       var b = document.createElement('button');
