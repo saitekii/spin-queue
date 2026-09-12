@@ -1835,12 +1835,28 @@
     persist();
   }
 
+  var IS_ANDROID = /Android/i.test(navigator.userAgent);
+
+  // On Android, Chrome won't offer to open music.youtube.com/search or
+  // open.spotify.com/search links in the YT Music / Spotify apps (those
+  // paths aren't registered as verified App Links) -- it just opens the
+  // plain URL in the browser. An intent:// link sidesteps that by naming
+  // the app package directly, falling back to the browser URL if the app
+  // isn't installed. Desktop/iOS keep the plain https link unchanged.
+  function androidIntentLink(httpsUrl, packageName){
+    var withoutScheme = httpsUrl.replace(/^https:\/\//, '');
+    return 'intent://' + withoutScheme + '#Intent;scheme=https;package=' + packageName +
+      ';S.browser_fallback_url=' + encodeURIComponent(httpsUrl) + ';end;';
+  }
+
   function ytSearch(it){
-    return 'https://music.youtube.com/search?q=' + encodeURIComponent(it.artist + ' ' + it.album);
+    var url = 'https://music.youtube.com/search?q=' + encodeURIComponent(it.artist + ' ' + it.album);
+    return IS_ANDROID ? androidIntentLink(url, 'com.google.android.apps.youtube.music') : url;
   }
 
   function spotifySearch(it){
-    return 'https://open.spotify.com/search/' + encodeURIComponent(it.artist + ' ' + it.album);
+    var url = 'https://open.spotify.com/search/' + encodeURIComponent(it.artist + ' ' + it.album);
+    return IS_ANDROID ? androidIntentLink(url, 'com.spotify.music') : url;
   }
 
   // ---------------------------------------------------------------------
