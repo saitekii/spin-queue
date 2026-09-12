@@ -397,7 +397,7 @@
       </select>
       <button class="icon-btn" id="surpriseBtn">🎲 Surprise me</button>
       <button class="icon-btn" id="copyBtn">Copy Keeps</button>
-      <button class="icon-btn" id="spotgenBtn">Copy for Spotgen</button>
+      <button class="icon-btn" id="exportRatingsBtn">📤 Export Ratings</button>
     </div>
     <div class="view-toggle" id="viewToggle">
       <button data-view="list" class="on">List</button>
@@ -1762,7 +1762,7 @@
     cToss: document.getElementById('cToss'),
     surpriseBtn: document.getElementById('surpriseBtn'),
     copyBtn: document.getElementById('copyBtn'),
-    spotgenBtn: document.getElementById('spotgenBtn'),
+    exportRatingsBtn: document.getElementById('exportRatingsBtn'),
     toast: document.getElementById('toast')
   };
   els.progAllTotal.textContent = ALL.length;
@@ -2771,14 +2771,19 @@
     }
   });
 
-  els.spotgenBtn.addEventListener('click', function(){
-    var keeps = ALL.filter(function(it){ return state[it.id] && state[it.id].rating === 'keep'; });
-    if(keeps.length===0){ showToast('No Keeps yet'); return; }
-    // spotgen (epsil.github.io/spotgen) directive syntax: #album TITLE - ARTIST
-    var text = keeps.map(function(it){ return '#album ' + it.album + ' - ' + it.artist; }).join('\n');
+  // Ratings made here live only in this browser's localStorage — unlike the
+  // Claude Artifact copy, there's no live DB Claude can read directly. This
+  // is the manual escape hatch: copy everything as JSON, paste it to Claude
+  // in a session to fold into the backed-up ratings.json (and from there,
+  // into the Artifact's live DB) so ratings made on a phone don't just sit
+  // here unseen.
+  els.exportRatingsBtn.addEventListener('click', function(){
+    var ratedCount = Object.keys(state).length;
+    if(ratedCount === 0){ showToast('No ratings yet'); return; }
+    var payload = JSON.stringify({ items: state, exportedAt: Date.now() });
     if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(text).then(function(){
-        showToast('Copied ' + keeps.length + ' Keeps for Spotgen — paste at epsil.github.io/spotgen');
+      navigator.clipboard.writeText(payload).then(function(){
+        showToast('Copied ' + ratedCount + ' ratings — paste to Claude to back these up');
       }).catch(function(){ showToast('Copy failed — select and copy manually'); });
     } else {
       showToast('Clipboard not available here');
