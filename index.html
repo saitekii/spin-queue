@@ -157,14 +157,14 @@
   .chip[data-status="toss"].on{ color:var(--paper); border-color:var(--toss); background:color-mix(in srgb, var(--toss) 18%, transparent); }
 
   /* descriptor chips get their own accent (teal) so they read as a different filter axis than genre (violet) */
-  #genreChips .chip{ color:var(--riso); border-color:color-mix(in srgb, var(--riso) 40%, var(--ink-3)); }
-  #genreChips .chip.on{ color:var(--paper); border-color:var(--riso); background:color-mix(in srgb, var(--riso) 18%, transparent); }
+  #genreFamilyChips .chip, #genreChips .chip{ color:var(--riso); border-color:color-mix(in srgb, var(--riso) 40%, var(--ink-3)); }
+  #genreFamilyChips .chip.on, #genreChips .chip.on{ color:var(--paper); border-color:var(--riso); background:color-mix(in srgb, var(--riso) 18%, transparent); }
   #descriptorChips .chip{ color:var(--vibe); border-color:color-mix(in srgb, var(--vibe) 40%, var(--ink-3)); }
   #descriptorChips .chip.on{ color:var(--paper); border-color:var(--vibe); background:color-mix(in srgb, var(--vibe) 18%, transparent); }
 
   /* 3-state filter chips: neutral -> include (violet/teal, above) -> exclude (red, below) -> neutral.
      These need to out-specificity the #id .chip base-color rules above, so they're repeated per container. */
-  .chip.excluded, #genreChips .chip.excluded, #descriptorChips .chip.excluded{ color:var(--paper); border-color:var(--toss); background:color-mix(in srgb, var(--toss) 18%, transparent); text-decoration:line-through; text-decoration-color:color-mix(in srgb, var(--toss) 70%, transparent); }
+  .chip.excluded, #genreFamilyChips .chip.excluded, #genreChips .chip.excluded, #descriptorChips .chip.excluded{ color:var(--paper); border-color:var(--toss); background:color-mix(in srgb, var(--toss) 18%, transparent); text-decoration:line-through; text-decoration-color:color-mix(in srgb, var(--toss) 70%, transparent); }
 
   .progress-row{
     display:flex; justify-content:space-between; align-items:baseline;
@@ -382,6 +382,7 @@
       <div class="chip-row" id="yearChips"></div>
       <div class="chip-row" id="tierChips"></div>
       <div class="chip-row" id="statusChips"></div>
+      <div class="chip-row" id="genreFamilyChips"></div>
       <div class="chip-row" id="genreChips"></div>
       <div class="search-row" style="margin:2px 0 6px;">
         <input type="text" id="descriptorSearchInput" placeholder="Search descriptors&hellip;">
@@ -1701,6 +1702,7 @@
     yearChips: document.getElementById('yearChips'),
     tierChips: document.getElementById('tierChips'),
     statusChips: document.getElementById('statusChips'),
+    genreFamilyChips: document.getElementById('genreFamilyChips'),
     genreChips: document.getElementById('genreChips'),
     descriptorChips: document.getElementById('descriptorChips'),
     descriptorSearch: document.getElementById('descriptorSearchInput'),
@@ -1726,9 +1728,11 @@
   var activeTiers = {}; TIERS.forEach(function(t){ activeTiers[t]=true; });
   var statusFilter = 'all';
   var sortMode = 'year-desc';
+  var activeGenreFamilies = new Set();
+  var excludeGenreFamilies = new Set();
   var activeGenres = new Set();
   var excludeGenres = new Set();
-  var genreMode = 'any'; // 'any' = at least one selected tag present, 'all' = every selected tag present
+  var genreMode = 'any'; // 'any' = at least one selected present, 'all' = every selected present (shared by family + tag chips)
   var GENRE_CHIP_COUNT = 20;
   var genresExpanded = false;
   var activeDescriptors = new Set();
@@ -1835,24 +1839,50 @@
       els.statusChips.appendChild(c);
     });
 
+    // Genre families (coarse: Metal, Jazz, Pop, ...) — lets you include/avoid a whole
+    // family (e.g. every Metal subgenre) in one click, instead of every exact tag under it.
+    var allFamilies = Array.from(new Set(ALL.map(function(it){ return it.tags.map(genreFamily); }).flat())).sort();
+    els.genreFamilyChips.innerHTML = '';
+    if(allFamilies.length){
+      var gfHeaderRow = document.createElement('span');
+      gfHeaderRow.className = 'pl-field-label';
+      gfHeaderRow.style.cssText = 'flex-basis:100%; margin:0 0 4px;';
+      var gfLabel = document.createElement('span');
+      gfLabel.style.cssText = 'font-family:\'Space Mono\';font-size:10.5px;color:var(--ink-soft2);';
+      gfLabel.textContent = 'Genre family (' + allFamilies.length + '):';
+      var gfToggleHost = document.createElement('span');
+      gfToggleHost.id = 'genreModeToggle';
+      gfToggleHost.className = 'pl-mode-toggle';
+      gfHeaderRow.title = 'Click a genre-family chip: include, click again: avoid, click again: clear — applies to every subgenre under that family. Any/All also governs the exact-tag list below.';
+      gfHeaderRow.appendChild(gfLabel);
+      gfHeaderRow.appendChild(gfToggleHost);
+      els.genreFamilyChips.appendChild(gfHeaderRow);
+      plModeToggle('genreModeToggle', genreMode, function(m){ genreMode = m; buildChips(); refresh(); });
+    }
+    allFamilies.forEach(function(f){
+      var fc = document.createElement('span');
+      fc.className = 'chip';
+      fc.textContent = f;
+      fc.dataset.genreFamily = f;
+      fc.addEventListener('click', function(){
+        if(activeGenreFamilies.has(f)){ activeGenreFamilies.delete(f); excludeGenreFamilies.add(f); }
+        else if(excludeGenreFamilies.has(f)){ excludeGenreFamilies.delete(f); }
+        else { activeGenreFamilies.add(f); }
+        refresh();
+      });
+      els.genreFamilyChips.appendChild(fc);
+    });
+
     var allGenres = computeGroupedGenres();
     var shownGenres = genresExpanded ? allGenres : allGenres.slice(0, GENRE_CHIP_COUNT);
     els.genreChips.innerHTML = '';
     if(allGenres.length){
-      var headerRow = document.createElement('span');
-      headerRow.className = 'pl-field-label';
-      headerRow.style.cssText = 'flex-basis:100%; margin:0 0 4px;';
       var label = document.createElement('span');
-      label.style.cssText = 'font-family:\'Space Mono\';font-size:10.5px;color:var(--ink-soft2);';
-      label.textContent = 'Genre (' + allGenres.length + '), grouped by RYM parent genre:';
-      var toggleHost = document.createElement('span');
-      toggleHost.id = 'genreModeToggle';
-      toggleHost.className = 'pl-mode-toggle';
-      headerRow.title = 'Click a genre chip: include, click again: avoid, click again: clear';
-      headerRow.appendChild(label);
-      headerRow.appendChild(toggleHost);
-      els.genreChips.appendChild(headerRow);
-      plModeToggle('genreModeToggle', genreMode, function(m){ genreMode = m; buildChips(); refresh(); });
+      label.style.cssText = 'font-family:\'Space Mono\';font-size:10.5px;color:var(--ink-soft2);align-self:center;margin-right:2px;';
+      label.title = 'Click an exact-tag chip: include, click again: avoid, click again: clear';
+      label.textContent = 'Genre tag (' + allGenres.length + '), grouped by RYM parent genre:';
+      label.style.flexBasis = '100%';
+      els.genreChips.appendChild(label);
     }
     var lastFamily = null;
     shownGenres.forEach(function(g){
@@ -1985,6 +2015,10 @@
     Array.prototype.forEach.call(els.statusChips.querySelectorAll('.chip[data-status]'), function(c){
       c.classList.toggle('on', c.dataset.status === statusFilter);
     });
+    Array.prototype.forEach.call(els.genreFamilyChips.querySelectorAll('.chip[data-genre-family]'), function(c){
+      c.classList.toggle('on', activeGenreFamilies.has(c.dataset.genreFamily));
+      c.classList.toggle('excluded', excludeGenreFamilies.has(c.dataset.genreFamily));
+    });
     Array.prototype.forEach.call(els.genreChips.querySelectorAll('.chip[data-genre]'), function(c){
       c.classList.toggle('on', activeGenres.has(c.dataset.genre));
       c.classList.toggle('excluded', excludeGenres.has(c.dataset.genre));
@@ -2001,6 +2035,7 @@
     YEARS.forEach(function(y){ if(!activeYears[y]) n++; });
     TIERS.forEach(function(t){ if(!activeTiers[t]) n++; });
     if(statusFilter !== 'all') n++;
+    n += activeGenreFamilies.size + excludeGenreFamilies.size;
     n += activeGenres.size + excludeGenres.size;
     n += activeDescriptors.size + excludeDescriptors.size;
     var badge = document.getElementById('filterCount');
@@ -2022,10 +2057,23 @@
   }
 
   function matchesGenre(it){
+    var itFamilies = null;
+    if(excludeGenreFamilies.size || activeGenreFamilies.size) itFamilies = it.tags.map(genreFamily);
+    if(excludeGenreFamilies.size && itFamilies.some(function(f){ return excludeGenreFamilies.has(f); })) return false;
     if(excludeGenres.size && it.tags.some(function(t){ return excludeGenres.has(t); })) return false;
-    if(activeGenres.size === 0) return true;
-    if(genreMode === 'all') return Array.from(activeGenres).every(function(t){ return it.tags.indexOf(t) !== -1; });
-    return it.tags.some(function(t){ return activeGenres.has(t); });
+    if(activeGenreFamilies.size){
+      var famOk = genreMode === 'all'
+        ? Array.from(activeGenreFamilies).every(function(f){ return itFamilies.indexOf(f) !== -1; })
+        : itFamilies.some(function(f){ return activeGenreFamilies.has(f); });
+      if(!famOk) return false;
+    }
+    if(activeGenres.size){
+      var tagOk = genreMode === 'all'
+        ? Array.from(activeGenres).every(function(t){ return it.tags.indexOf(t) !== -1; })
+        : it.tags.some(function(t){ return activeGenres.has(t); });
+      if(!tagOk) return false;
+    }
+    return true;
   }
 
   function matchesDescriptor(it){
