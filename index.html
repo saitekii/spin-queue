@@ -198,9 +198,6 @@
   .item{ display:flex; gap:11px; padding:11px 0; border-bottom:1px solid var(--ink-2); scroll-margin-top:170px; }
   .item.rated .meta .name{ color:var(--ink-soft); }
   .item.rated .meta .album{ text-decoration:line-through; text-decoration-color:var(--ink-soft2); }
-  .item.flash{ animation:flash 1.4s ease; }
-  @keyframes flash{ 0%,100%{ background:transparent; } 25%{ background:color-mix(in srgb, var(--riso) 18%, transparent); } }
-
   .meta{ flex:1; min-width:0; }
   .meta .top-row{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
   .meta .album{ font-weight:600; font-size:14px; }
@@ -395,7 +392,6 @@
         <option value="album-az">Sort: Album A&rarr;Z</option>
         <option value="rating">Sort: Rating (Keep first)</option>
       </select>
-      <button class="icon-btn" id="surpriseBtn">🎲 Surprise me</button>
       <button class="icon-btn" id="copyBtn">Copy Keeps</button>
       <button class="icon-btn" id="exportRatingsBtn">📤 Export Ratings</button>
     </div>
@@ -1766,7 +1762,6 @@
     cKeep: document.getElementById('cKeep'),
     cMeh: document.getElementById('cMeh'),
     cToss: document.getElementById('cToss'),
-    surpriseBtn: document.getElementById('surpriseBtn'),
     copyBtn: document.getElementById('copyBtn'),
     exportRatingsBtn: document.getElementById('exportRatingsBtn'),
     toast: document.getElementById('toast')
@@ -2777,17 +2772,6 @@
     });
   });
   window.addEventListener('resize', function(){ if(viewMode === 'graph') renderGraph(); });
-
-  els.surpriseBtn.addEventListener('click', function(){
-    var pool = visibleItems().filter(function(it){ return !(state[it.id] && state[it.id].rating); });
-    if(pool.length===0){ showToast('Nothing left unheard in this view'); return; }
-    var pick = pool[Math.floor(Math.random()*pool.length)];
-    var el = document.getElementById(pick.id);
-    if(el){
-      el.scrollIntoView({ behavior:'smooth', block:'center' });
-      el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
-    }
-  });
 
   document.getElementById('triageBtn').addEventListener('click', openTriage);
   document.getElementById('triageCloseBtn').addEventListener('click', closeTriage);
