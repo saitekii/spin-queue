@@ -393,6 +393,9 @@
         <option value="year-asc">Sort: Year (oldest)</option>
         <option value="artist-az">Sort: Artist A&rarr;Z</option>
         <option value="album-az">Sort: Album A&rarr;Z</option>
+        <option value="tier-first">Sort: Tier (Confirmed first)</option>
+        <option value="genre-family">Sort: Genre</option>
+        <option value="random">Sort: Random</option>
         <option value="rating">Sort: Rating (Keep first)</option>
       </select>
       <button class="icon-btn" id="copyBtn">Copy Keeps</button>
@@ -446,6 +449,9 @@
           <option value="year-asc">Sort: Year (oldest)</option>
           <option value="artist-az">Sort: Artist A&rarr;Z</option>
           <option value="album-az">Sort: Album A&rarr;Z</option>
+          <option value="tier-first">Sort: Tier (Confirmed first)</option>
+          <option value="genre-family">Sort: Genre</option>
+          <option value="random">Sort: Random</option>
         </select>
       </div>
       <div id="triageBody" class="triage-body"></div>
@@ -1874,6 +1880,7 @@
   var LS_KEY = 'spinQueueProgress_v2';
   var LAST_RATED_KEY = 'spinQueueLastRatedAt_v1';
   var lastRatedAt = (function(){ try{ var v = localStorage.getItem(LAST_RATED_KEY); return v ? parseInt(v, 10) : null; }catch(e){ return null; } })();
+  var randomOrder = null; // shuffled once per switch into "Sort: Random", not re-rolled on every render
   var state = {};
   var activeYears = {}; YEARS.forEach(function(y){ activeYears[y]=true; });
   var activeTiers = {}; TIERS.forEach(function(t){ activeTiers[t]=true; });
@@ -2371,6 +2378,22 @@
   }
 
   var RATING_SORT_ORDER = { keep:0, meh:1, toss:2 };
+  var TIER_SORT_ORDER = { 'Confirmed favorites':0, 'Best new discoveries':1, 'Worth a shot':2 };
+
+  function shuffleRandomOrder(){
+    var ids = ALL.map(function(it){ return it.id; });
+    for(var i = ids.length - 1; i > 0; i--){
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = ids[i]; ids[i] = ids[j]; ids[j] = tmp;
+    }
+    randomOrder = ids;
+  }
+
+  // An album usually carries 2+ genre tags (e.g. ["Metalcore","Djent"]) with no
+  // single "correct" one -- for grouping purposes (not filtering, which already
+  // handles multi-tag matching elsewhere) the first tag is treated as primary,
+  // since that's RYM's own most-prominent-genre-first convention.
+  function primaryGenreFamily(it){ return genreFamily(it.tags[0]); }
 
   // Shared by render()'s flat-sort branch and the triage queue, so both stay
   // in sync with the same comparators instead of drifting apart over time.
@@ -2387,6 +2410,19 @@
         if(ra !== rb) return ra - rb;
         return a.artist.localeCompare(b.artist);
       });
+    } else if(sortMode === 'tier-first'){
+      sorted.sort(function(a,b){
+        return TIER_SORT_ORDER[a.tier] - TIER_SORT_ORDER[b.tier] || b.year - a.year || a.artist.localeCompare(b.artist);
+      });
+    } else if(sortMode === 'genre-family'){
+      sorted.sort(function(a,b){
+        return primaryGenreFamily(a).localeCompare(primaryGenreFamily(b)) || a.artist.localeCompare(b.artist);
+      });
+    } else if(sortMode === 'random'){
+      if(!randomOrder) shuffleRandomOrder();
+      var pos = {};
+      randomOrder.forEach(function(id, i){ pos[id] = i; });
+      sorted.sort(function(a,b){ return (pos[a.id] || 0) - (pos[b.id] || 0); });
     }
     return sorted;
   }
@@ -2443,9 +2479,45 @@
           els.tiers.appendChild(sec);
         });
       });
+    } else if(sortMode === 'tier-first'){
+      TIERS.forEach(function(tier){
+        var groupItems = visible.filter(function(it){ return it.tier === tier; })
+          .sort(function(a,b){ return b.year - a.year || a.artist.localeCompare(b.artist); });
+        if(groupItems.length === 0) return;
+
+        var sec = document.createElement('section');
+        sec.className = 'tier';
+        sec.dataset.tier = tier;
+        var head = document.createElement('div');
+        head.className = 'tier-head';
+        head.innerHTML = '<h2>' + tier + '</h2><span>' + groupItems.length + '</span>';
+        sec.appendChild(head);
+
+        groupItems.forEach(function(it){ sec.appendChild(renderItem(it)); });
+        els.tiers.appendChild(sec);
+      });
+    } else if(sortMode === 'genre-family'){
+      var byFamily = {};
+      visible.forEach(function(it){
+        var f = primaryGenreFamily(it);
+        (byFamily[f] = byFamily[f] || []).push(it);
+      });
+      Object.keys(byFamily).sort().forEach(function(fam){
+        var groupItems = byFamily[fam].sort(function(a,b){ return a.artist.localeCompare(b.artist); });
+
+        var sec = document.createElement('section');
+        sec.className = 'tier';
+        var head = document.createElement('div');
+        head.className = 'tier-head';
+        head.innerHTML = '<h2>' + fam + '</h2><span>' + groupItems.length + '</span>';
+        sec.appendChild(head);
+
+        groupItems.forEach(function(it){ sec.appendChild(renderItem(it)); });
+        els.tiers.appendChild(sec);
+      });
     } else {
-      // Artist/Album/Rating sorts flatten across years & tiers, since alphabetical or
-      // rating order doesn't map onto the year->tier grouping at all. renderItem()'s
+      // Artist/Album/Rating/Random sorts flatten across years & tiers, since none
+      // of those orderings map onto the year->tier grouping at all. renderItem()'s
       // tier badge carries the tier context that the section headers normally would.
       var sorted = sortFlatByMode(visible);
       if(sorted.length){
